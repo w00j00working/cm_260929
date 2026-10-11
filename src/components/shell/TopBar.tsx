@@ -5,21 +5,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { boardEntries, useMenuSettings, buildMenu } from '@/lib/menuStore';
+import { Relation, REL_SEED, openableRels, relMenuEntries } from '@/lib/charStore';
+import { useLocalList } from '@/lib/postStore';
 import { useBoards } from '@/lib/boardStore';
 import { useSections, sectionMenuEntries } from '@/lib/sectionStore';
 import { useCustomLinks, linkEntries } from '@/lib/linkStore';
 import { useSiteSettings } from '@/lib/siteStore';
 import { useAuth } from '@/lib/auth';
+import { currentHomeId, leaveHome } from '@/lib/home';
 import { useMainStore } from '@/lib/mainStore';
 import { useBlobUrl } from '@/lib/blobStore';
 import { refreshPage } from '@/lib/pageRefresh';
 import { useToast } from '@/components/ui/Toast';
 import { KToggle } from '@/components/ui/Kit';
+import { InkFit } from '@/components/ui/InkFit';
 import {
   Notif, NotifType, NOTIF_EVENT, NOTIF_TYPE_LABEL,
   readNotifs, markRead, markAllRead, clearReadNotifs, notifSettings, setNotifSetting, syncNotifs, selfTestNotif,
 } from '@/lib/notifStore';
 import { subscribeTable } from '@/lib/db';
+import { isMsgSoundOn, setMsgSoundOn, MSG_SOUND_EVT } from '@/lib/msgSound';
 
 const BellIcon = () => (
   <svg viewBox="0 0 24 24">
@@ -40,10 +45,13 @@ export function TopBar() {
   const { boards, loaded: boardsLoaded } = useBoards(); // 다중 게시판 (5.2) — 게시판 그룹에 동적 반영
   const { map: secMap } = useSections();
   const { links } = useCustomLinks();                    // 커스텀 링크 (v2.0 사용자 요청)                 // 여러 개로 만든 섹션 (v2.0) — 갤러리·다이어리 등
+  // 자관마다 메뉴 항목 (커플홈 사용자 요청) — 이 사람이 열 수 있는 자관만
+  const [rels, , relsLoaded] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
+  const relEntries = relMenuEntries(openableRels(rels, { isAdmin, loggedIn: !!user }));
   // 저장 설정 로드 전에는 메뉴·로고를 그리지 않음 — 새로고침 시 기본 구성이 깜빡이는 것 방지 (v1.9)
-  const ready = menuLoaded && boardsLoaded;
+  const ready = menuLoaded && boardsLoaded && relsLoaded;
   const menu = ready
-    ? buildMenu(menuSet, [...boardEntries(boards), ...sectionMenuEntries(secMap), ...linkEntries(links)], { loggedIn: !!user, isAdmin, id: user?.id })
+    ? buildMenu(menuSet, [...boardEntries(boards), ...sectionMenuEntries(secMap), ...relEntries, ...linkEntries(links)], { loggedIn: !!user, isAdmin, id: user?.id })
     : [];
   const [site, , siteLoaded] = useSiteSettings();    // 로고 텍스트/서브/정렬 (5.2)
   const avatarSrc = useBlobUrl(user?.avatarUrl);     // 프로필 이미지 (마이페이지, v1.9)
@@ -89,6 +97,14 @@ export function TopBar() {
   };
   const mySet = user ? notifSettings(user.id) : null;
   void notifVer;
+  // 알림음 켜고 끄기 (커플홈 사용자 요청 — "알림 아이콘 눌러서 나오는 곳에서 알림 켜고 끄기") — 브라우저마다, 역극 페이지의 종 버튼과 같은 값
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => {
+    const f = () => setSoundOn(isMsgSoundOn());
+    f();
+    window.addEventListener(MSG_SOUND_EVT, f);
+    return () => window.removeEventListener(MSG_SOUND_EVT, f);
+  }, []);
 
   // 편집모드 중에는 이동 전에 종료 확인 (v1.8)
   // 지금 보고 있는 메뉴를 다시 누르면 그 페이지를 새로 불러옴 — 다시 접속하는 느낌 (v1.9 사용자 요청)
@@ -107,6 +123,19 @@ export function TopBar() {
 
   // 상위 메뉴 개수 무제한 (v1.9) — 바 폭을 넘치는 항목은 「⋯」 드롭다운으로 자동 이동 (priority+)
   const gnbRef = useRef<HTMLElement>(null);
+  /* 상단 바 높이 (커플홈) — 로고 폰트가 크면(필기체 등) 바가 로고만큼 커진다. 그 높이를 --top-h로 알려
+     화면 높이로 계산하는 곳(캐릭터 상세 아트 등)이 따라오게 한다 */
+  const topRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = topRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement.style;
+    const set = () => root.setProperty('--top-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+    set();   // 처음 한 번은 바로 — 관찰자는 화면이 실제로 그려질 때에야 알려 준다
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); root.removeProperty('--top-h'); };
+  }, []);
   const measureRef = useRef<HTMLDivElement>(null);
   const [visCount, setVisCount] = useState(menu.length);
   const menuKey = menu.map(m => m.label).join('|');
@@ -146,10 +175,11 @@ export function TopBar() {
   const moreMenu = menu.slice(visCount);
 
   return (
-    <header className="topbar">
-      {/* 로고 — 텍스트·서브타이틀·정렬은 환경설정 > 디자인 (5.2) */}
+    <header className="topbar" ref={topRef}>
+      {/* 로고 — 텍스트·서브타이틀·정렬은 환경설정 > 디자인 (5.2).
+          로고 글씨는 실제 글자 모양만큼 자리를 잡는다 (커플홈 — 필기체 로고가 바 밖으로 넘쳤다) */}
       <div className="brand" onClick={() => nav('/')}>
-        {siteLoaded && site.title}
+        {siteLoaded && <InkFit as="span" className="bt" text={site.title} />}
         {siteLoaded && site.subtitle && <small className={`al-${site.align}`}>{site.subtitle}</small>}
       </div>
 
@@ -267,8 +297,13 @@ export function TopBar() {
             ))}
             {mySet && (
               <div className="nset">
+                {/* 알림음 — 이 브라우저에서만 (커플홈). 역극 발화·그 밖의 알림 모두 이 하나로 */}
+                <label className="row">
+                  <span>알림음 (이 브라우저)</span>
+                  <KToggle checked={soundOn} onChange={v => { setMsgSoundOn(v); setSoundOn(v); }} />
+                </label>
                 {(Object.keys(NOTIF_TYPE_LABEL) as NotifType[])
-                  .filter(k => k !== 'guest' || isAdmin) // 방명록 알림은 관리자 항목
+                  .filter(k => k !== 'guest') // 방명록 알림 — 커플홈에서 방명록을 없애 항목도 숨긴다
                   .map(k => (
                     <label key={k} className="row">
                       <span>{NOTIF_TYPE_LABEL[k]}</span>
@@ -294,6 +329,10 @@ export function TopBar() {
                   </button>
                 )}
                 <button onClick={() => { setMenuOpen(false); nav('/settings'); }}>환경설정</button>
+                {/* 총관리자는 자관 리스트에서 골라 들어온다 — 돌아가는 길 (v2.1) */}
+                {currentHomeId() && (
+                  <button onClick={() => { setMenuOpen(false); leaveHome(); }}>리스트로</button>
+                )}
               </>
             )}
             <button onClick={() => { setMenuOpen(false); logout(); }}>로그아웃</button>

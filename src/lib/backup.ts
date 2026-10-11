@@ -21,7 +21,7 @@ const SITE_KEYS = [
   'ohome.theme.v2', 'ohome.theme.v1', 'ohome.themeCss.v1', 'ohome.themePresets.v1', 'ohome.intro.v1', 'ohome.links.v1',
   'ohome.fonts.v2', 'ohome.fonts.v1', 'ohome.menuset.v1', 'ohome.site.v1', 'ohome.pagetext.v1',
   'ohome.cursor.v1', 'ohome.bgm.v1', 'ohome.bgm.fold', 'ohome.boardset.v1', 'ohome.boards.v1',
-  'ohome.commset.v1', 'ohome.memoset.v1', 'ohome.threadset.v1', 'ohome.trpgset.v1',
+  'ohome.commset.v1', 'ohome.memoset.v1', 'ohome.threadset.v1', 'ohome.trpgset.v1', 'ohome.diaryset.v1',
   'ohome.moods.v1', 'ohome.relqsets.v1', 'ohome.notifset.v1',
 ];
 
@@ -36,14 +36,16 @@ export const RESET_CONTENT: ResetGroup[] = [
   { key: 'backup', label: '갤러리(그림 백업)', keys: ['ohome.backup.v1'] },
   { key: 'road', label: '로드뷰', keys: ['ohome.road.v1', 'ohome.roadnext.v1'] },
   // 본문은 목록과 분리 저장이라(v2.0) 같이 지워야 로그만 지워지고 본문이 유령처럼 남지 않는다
-  { key: 'trpg', label: 'TRPG 로그', keys: ['ohome.trpg.v1', 'ohome.trpgbody.v1'] },
+  { key: 'trpg', label: 'RP LOG', keys: ['ohome.trpg.v1', 'ohome.trpgbody.v1'] },
   { key: 'tchars', label: 'TRPG 캐릭터', keys: ['ohome.tchars.v1'] },
   { key: 'dotori', label: '도토리', keys: ['ohome.dotori.v1'] },
   { key: 'playlog', label: '플레이기록', keys: ['ohome.playlog.v1'] },
   { key: 'rp', label: '역극', keys: ['ohome.rp.v1'] },
-  { key: 'threads', label: '감상타래', keys: ['ohome.threads.v1'] },
+  // 글은 타래와 따로 저장이라(커플홈) 같이 지워야 타래만 지워지고 글이 유령처럼 남지 않는다
+  { key: 'threads', label: '감상타래', keys: ['ohome.threads.v1', 'ohome.thrposts.v1'] },
   { key: 'diary', label: '다이어리', keys: ['ohome.diary.v1'] },
   { key: 'memo', label: '메모장', keys: ['ohome.memo.v1'] },
+  { key: 'videos', label: 'Videos', keys: ['ohome.videos.v1'] },
   { key: 'comm', label: '커미션·신청자', keys: ['ohome.comm.v1', 'ohome.commapply.v1'] },
   { key: 'sched', label: '스케줄러 일정', keys: ['ohome.sched.v1'] },
   { key: 'notif', label: '알림', keys: ['ohome.notif.v1'] },

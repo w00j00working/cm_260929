@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocalList, newId } from '@/lib/postStore';
 import { useSectionParam, secStamp, secQuery, MAIN_SEC } from '@/lib/sectionStore';
-import { ThreadWork, THREAD_SEED, useThreadSettings, threadCats } from '@/lib/threadStore';
+import { ThreadWork, THREAD_SEED, useThreadSettings, threadCats, THR_POST_KEY, THR_POST_SEED, ThreadPostRow } from '@/lib/threadStore';
+import { useAuth } from '@/lib/auth';
 import { useFonts } from '@/lib/fontStore';
 import { putBlob, useBlobUrl } from '@/lib/blobStore';
 import { CropEditor, CropImg, CropValue } from '@/components/ui/CropEditor';
@@ -17,6 +18,9 @@ export function ThreadForm({ editId }: { editId?: string }) {
   const router = useRouter();
   const toast = useToast();
   const [works, setWorks, loaded] = useLocalList<ThreadWork>('ohome.threads.v1', THREAD_SEED);
+  const { user, isAdmin } = useAuth();
+  // 따로 저장된 글 (커플홈) — 공개범위를 바꾸면 글에도 옮겨 적는다
+  const [postRows, setPostRows] = useLocalList<ThreadPostRow>(THR_POST_KEY, THR_POST_SEED);
   // 어느 감상타래에서 눌러 왔는지 (v2.0)
   const sec = useSectionParam('threads');
   const [settings] = useThreadSettings();
@@ -75,6 +79,12 @@ export function ThreadForm({ editId }: { editId?: string }) {
         author: author.trim(), authorRole: role.trim() || undefined,
         catId, visibility: vis, posterId, posterCrop: crop,
       } : w));
+      /* 공개범위가 바뀌면 딸린 글에도 (커플홈) — 글은 따로 저장돼 각자 공개범위를 들고 있다.
+         서버가 허락하는 것만 고친다: 관리자는 전부, 그 밖에는 내가 쓴 글만 */
+      if (vis !== orig.visibility) {
+        const mine = (r: ThreadPostRow) => r.workId === orig.id && (isAdmin || r.authorId === user?.id);
+        if (postRows.some(mine)) setPostRows(postRows.map(r => (mine(r) ? { ...r, visibility: vis } : r)));
+      }
       toast('저장되었습니다');
     } else {
       const w: ThreadWork = {
@@ -84,6 +94,7 @@ export function ThreadForm({ editId }: { editId?: string }) {
         catId, visibility: vis, posterId, posterCrop: crop,
         ph: PHS[works.length % PHS.length],
         created: new Date().toISOString(), posts: [],
+        createdBy: user?.id,   // 두 사람이 같이 쓰므로 누가 시작했는지 (커플홈 — 정보 수정·삭제 권한)
       };
       setWorks([{ ...w, ...secStamp(sec.id) }, ...works]);
       toast('타래가 시작되었습니다');

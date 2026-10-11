@@ -3,7 +3,9 @@
 // 기본 위치 오른쪽 아래 · 곡 리스트 팝업 (v1.9) · 페이지 이동에도 유지(레이아웃 상주)
 // 브라우저 정책상 소리 재생은 사용자의 첫 클릭부터 시작
 import React, { useEffect, useRef, useState } from 'react';
-import { useBgm } from '@/lib/bgmStore';
+import { useBgm, BgmTrack, MAIN_LIST } from '@/lib/bgmStore';
+
+const LIST_PICK_KEY = 'ohome.bgm.list';   // 이 브라우저에서 고른 플레이리스트 (방문자별)
 
 /** 흐르는 글씨 — 재생 중이고 글자가 넘칠 때만 무한 스크롤, 평소엔 말줄임.
  *  넘침 판정은 숨김 측정용 스팬으로 — 마운트 직후(레이아웃·폰트 확정 전) 1회 측정만 하면
@@ -60,8 +62,24 @@ const ListIcon = () => (
 );
 
 export function BgmPlayer() {
-  const { state } = useBgm();
-  const { tracks, settings } = state;
+  const { state, lists, tracksOf } = useBgm();
+  const { settings } = state;
+  /* 플레이리스트 여러 개 (커플홈 사용자 요청) — 지금 듣는 목록은 방문자별로 기억, 처음에는 관리자가 정한 defList */
+  const [listId, setListId] = useState(MAIN_LIST);
+  const tracks = tracksOf(listId);
+  const anyTracks = lists.some(l => l.tracks.length > 0);
+  const listInitRef = useRef(false);
+  useEffect(() => {
+    if (listInitRef.current || !anyTracks) return;
+    listInitRef.current = true;
+    let want: string | null = null;
+    try { want = localStorage.getItem(LIST_PICK_KEY); } catch { /* 무시 */ }
+    const pick = want && lists.some(l => l.id === want) ? want
+      : settings.defList && lists.some(l => l.id === settings.defList) ? settings.defList
+      : MAIN_LIST;
+    setListId(pick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyTracks]);
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [listOpen, setListOpen] = useState(false);
@@ -147,8 +165,8 @@ export function BgmPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.enabled, tracks.length > 0]);
 
-  const playAt = (i: number) => {
-    const t = tracks[i];
+  const playAt = (i: number, list: BgmTrack[] = tracks) => {
+    const t = list[i];
     if (!t || !playerRef.current) { setIdx(i); return; }
     setIdx(i);
     startedRef.current = true;
@@ -213,6 +231,16 @@ export function BgmPlayer() {
 
   const prev = () => playAt((idxRef.current - 1 + tracks.length) % tracks.length);
 
+  /** 플레이리스트 바꾸기 — 처음 곡부터. 듣던 중이면 바로 이어서 재생, 아니면 곡만 바꿔 둔다 */
+  const pickList = (id: string) => {
+    if (id === listId) return;
+    setListId(id);
+    try { localStorage.setItem(LIST_PICK_KEY, id); } catch { /* 무시 */ }
+    const nt = tracksOf(id);
+    if (playingRef.current && nt.length) playAt(0, nt);
+    else { setIdx(0); if (nt[0] && playerRef.current && readyRef.current) { playerRef.current.cueVideoById(nt[0].videoId); startedRef.current = false; } }
+  };
+
   const togglePlay = () => {
     if (!playerRef.current) return;
     if (playing) {
@@ -245,13 +273,13 @@ export function BgmPlayer() {
     window.addEventListener('pointerup', up);
   };
 
-  if (!settings.enabled || tracks.length === 0) return null;
+  if (!settings.enabled || !anyTracks) return null;
 
   return (
     <div
       ref={rootRef}
-      className={`bgm ${folded ? 'folded' : ''} ${settings.position === 'bl' ? 'bgm-left' : ''}`}
-      style={settings.position === 'bl' ? { right: 'auto', left: 20 } : undefined}
+      /* bgm-dock (커플홈 사용자 요청) — PC에서도 모바일처럼 화면 아래에 붙는 바. 위치는 CSS(.bgm-left)가 맡는다 */
+      className={`bgm ${folded ? 'folded' : ''} ${settings.position === 'bl' ? 'bgm-left' : ''} ${settings.dock ? 'bgm-dock' : ''}`}
       onClick={() => { if (folded) setFold(false); }}
       data-tip={folded ? '펼치기' : undefined}
     >
@@ -286,12 +314,26 @@ export function BgmPlayer() {
           <div style={{ position: 'fixed', inset: 0, zIndex: -1 }} onClick={() => setListOpen(false)} />
           <div className="bgm-list on">
             <div className="h">BGM LIST</div>
-            {tracks.map((t, i) => (
-              <div key={t.id} className={`it ${i === idx ? 'on' : ''}`}
-                onClick={() => { playAt(i); setListOpen(false); }}>
-                <b>{t.title}</b><small>{t.desc}</small>
+            {/* 플레이리스트 고르기 (커플홈) — 둘 이상일 때만 */}
+            {lists.length > 1 && (
+              <div className="pl">
+                {lists.map(l => (
+                  <button key={l.id} className={l.id === listId ? 'on' : ''} disabled={l.tracks.length === 0}
+                    data-tip={l.tracks.length === 0 ? '비어 있음' : undefined}
+                    onClick={e => { e.stopPropagation(); pickList(l.id); }}>{l.name}</button>
+                ))}
               </div>
-            ))}
+            )}
+            {tracks.length === 0 && <div className="it"><small>이 플레이리스트에는 곡이 없습니다</small></div>}
+            {/* 곡은 8개까지 보이고 넘어가면 안에서 스크롤 (사용자 요청) */}
+            <div className="tracks">
+              {tracks.map((t, i) => (
+                <div key={t.id} className={`it ${i === idx ? 'on' : ''}`}
+                  onClick={() => { playAt(i); setListOpen(false); }}>
+                  <b>{t.title}</b><small>{t.desc}</small>
+                </div>
+              ))}
+            </div>
           </div>
         </>
       )}

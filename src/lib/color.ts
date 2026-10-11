@@ -93,6 +93,19 @@ export function withAlpha(color: string, alpha: number): string {
   return `rgba(${r},${g},${b},${+clamp(a * alpha, 0, 1).toFixed(3)})`;
 }
 
+/** 이미지가 없을 때의 자리표시자 배경 — 캐릭터 테마색으로 (커플홈 사용자 요청: 「자캐 테마색을 골랐으면 그 색 썸네일로」).
+ *  색 하나면 그 색에서 어두운 쪽으로, 둘(자관의 두 사람)이면 왼쪽 색 → 오른쪽 색. 쓸 색이 없으면 undefined(기존 클래스 그대로) */
+export function phStyle(colors: (string | undefined)[]): { background: string } | undefined {
+  const cs = colors.filter((c): c is string => !!c && isValidColor(c));
+  if (cs.length === 0) return undefined;
+  if (cs.length === 1) {
+    // HSL 값은 0~1 (hexToHsl) — 어두운 끝은 밝기 55%, 채도는 살짝 올린다
+    const dark = adjust(cs[0], c => ({ l: Math.max(0.08, c.l * 0.55), s: Math.min(1, c.s * 1.05) }));
+    return { background: `linear-gradient(135deg, ${cs[0]} 0%, ${dark} 70%)` };
+  }
+  return { background: `linear-gradient(135deg, ${cs[0]} 0%, ${cs[1]} 100%)` };
+}
+
 export function isValidHex(v: string): boolean {
   return /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim());
 }

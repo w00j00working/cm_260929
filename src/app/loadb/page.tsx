@@ -15,7 +15,7 @@ import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 import { KCheck } from '@/components/ui/Kit';
 import { useToast } from '@/components/ui/Toast';
 import { pushNotif } from '@/lib/notifStore';
-import { useMenuSettings, MenuPerm } from '@/lib/menuStore';
+import { useMenuSettings, MenuPerm, canWriteAt, writeKeyOf } from '@/lib/menuStore';
 import { GuestIdBar } from '@/components/ui/GuestId';
 import { fileDrop } from '@/lib/dnd';
 
@@ -284,7 +284,8 @@ function RoadviewPageInner() {
         <PageTitle>{sec.id === 'main' ? 'LOAD-B' : sec.name}</PageTitle>
         <EditableDesc k="roadview-desc" def="그림이 좋아서 모았습니다" />
         <div className="head-actions">
-          {allow(menuSet.roadUpload) && !!user && (
+          {/* 업로드 권한 (커플홈) — 추가 로드비는 환경설정 「권한」에서 따로(기본은 로드비 공통값 roadUpload) · 멤버 선택으로 좁힐 수 있다 */}
+          {canWriteAt(menuSet, writeKeyOf('/loadb', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, menuSet.roadUpload) && (
             <>
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={e => { upload(e.target.files?.[0]); e.target.value = ''; }} />

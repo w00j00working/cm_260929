@@ -19,6 +19,11 @@ function extOf(blob: Blob): string {
   if (t.includes('svg')) return 'svg';
   if (t.includes('jpeg') || t.includes('jpg')) return 'jpg';
   if (t.includes('font') || t.includes('woff')) return 'woff2';
+  // 동영상 (커플홈) — 올바른 확장자라야 브라우저가 바로 재생한다
+  if (t.includes('mp4') || t.includes('m4v')) return 'mp4';
+  if (t.includes('webm')) return 'webm';
+  if (t.includes('quicktime')) return 'mov';
+  if (t.includes('ogg')) return 'ogv';
   if (t.startsWith('text/')) return 'txt';
   return 'bin';
 }
@@ -222,6 +227,23 @@ export function useBlobUrl(ref?: string): string | undefined {
   }, [ref]);
 
   return url;
+}
+
+/** 파일 참조 → 주소, 훅 밖에서 (커플홈 — 로그에 프로필 사진을 넣을 때). 서버 모드의 참조는 저장소 공개 주소 그대로라
+ *  로그 파일·게시판 본문에 적어도 그대로 열린다. 로컬 파일은 이 세션에서만 사는 objectURL */
+export async function blobUrlOf(ref?: string): Promise<string | undefined> {
+  if (!ref) return undefined;
+  if (/^(https?:|data:)/.test(ref)) return ref;
+  if (ref.startsWith('blob:')) return undefined;
+  const hit = urlCache.get(ref);
+  if (hit) return hit;
+  try {
+    const b = await getBlob(ref);
+    if (!b) return undefined;
+    const u = URL.createObjectURL(b);
+    urlCache.set(ref, u);
+    return u;
+  } catch { return undefined; }
 }
 
 /** 파일 참조 이미지 — 없으면 플레이스홀더(ph) 폴백 */

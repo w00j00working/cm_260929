@@ -120,7 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (id: string, password: string): Promise<Result> => {
     if (server && be) {
       const r = await be.signIn(id.trim(), password);
-      return r.ok ? { ok: true } : { ok: false, error: r.error ?? '로그인에 실패했습니다.' };
+      if (!r.ok) return { ok: false, error: r.error ?? '로그인에 실패했습니다.' };
+      // 홈(자관)은 부팅 때 사용자를 보고 정해진다 (v2.1) — 로그인했으니 처음부터 다시 연다
+      window.location.href = '/';
+      return { ok: true };
     }
     const acc = mockRegistry()[id] ?? (isSetupDone() ? undefined : MOCK_ACCOUNTS[id]);
     if (!acc || acc.password !== password) return { ok: false, error: '아이디 또는 비밀번호가 올바르지 않습니다.' };
@@ -132,16 +135,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 회원가입 — 가입코드(초대코드) 방식
   const signup = useCallback(async (id: string, password: string, nickname: string, code: string): Promise<Result> => {
     if (!id || !password || !nickname) return { ok: false, error: '아이디·비밀번호·닉네임을 모두 입력해 주세요.' };
-    if (code !== inviteCode()) return { ok: false, error: '가입코드가 올바르지 않습니다.' };
     if (server && be) {
-      const r = await be.signUp(id.trim(), password, nickname.trim());
+      // 가입코드는 서버가 홈(자관)과 대조한다 (v2.1) — 코드가 곧 어느 홈의 회원이 되는지를 정한다
+      if (!code.trim()) return { ok: false, error: '가입코드를 입력해 주세요.' };
+      const r = await be.signUp(id.trim(), password, nickname.trim(), code.trim());
       if (!r.ok) return { ok: false, error: r.error ?? '가입에 실패했습니다.' };
-      // 계정이 만들어지는 순간 로그인 상태가 되며 사용자 정보가 먼저 계산되는데,
-      // 그때는 닉네임(프로필)이 아직 저장되기 전이라 이메일이 이름 자리에 들어간다.
-      // 저장이 끝난 지금 다시 읽어 이름을 바로잡는다.
-      try { const u = await be.currentUser(); if (u) setUser(u); } catch { /* 무시 */ }
+      // 계정이 만들어지는 순간 로그인 상태가 된다 — 홈은 부팅 때 정해지므로 처음부터 다시 연다
+      window.location.href = '/';
       return { ok: true };
     }
+    if (code !== inviteCode()) return { ok: false, error: '가입코드가 올바르지 않습니다.' };
     if (MOCK_ACCOUNTS[id] || mockRegistry()[id]) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
     const reg = mockRegistry();
     reg[id] = { password, user: { id, nickname, role: 'member' } };
@@ -208,7 +211,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [server, be, user]);
 
   const logout = useCallback(async () => {
-    if (server && be) { await be.signOut(); setUser(null); return; }
+    if (server && be) {
+      await be.signOut(); setUser(null);
+      // 홈 선택·설정 캐시는 사람에 묶인 것 — 처음부터 다시 연다 (v2.1)
+      window.location.href = '/';
+      return;
+    }
     setUser(null);
     try { localStorage.removeItem(MOCK_KEY); } catch { /* 무시 */ }
   }, [server, be]);

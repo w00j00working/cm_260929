@@ -11,6 +11,7 @@ import { newId } from '@/lib/postStore';
 import { useFonts, deVarFamily } from '@/lib/fontStore';
 import { putBlob, getBlob, useBlobUrl } from '@/lib/blobStore';
 import { KInput, KSelect, KCheck, KStep } from '@/components/ui/Kit';
+import { HEADER_BLUR_DEFAULT } from '@/lib/charStore';
 import { CropEditor, CropValue, CropImg } from '@/components/ui/CropEditor';
 import { DragList } from '@/components/ui/DragList';
 import { Lightbox } from '@/components/ui/Lightbox';
@@ -26,11 +27,14 @@ export interface RelFormValue {
   visibility: Visibility;
   fontId: string;
   bodyFontId: string;
+  titleSize?: number;        // 자관명 크기 px (커플홈)
+  titleBold?: boolean;       // 자관명 굵게 (커플홈)
   arts: string[];            // 첫 장 = 대표 = 리스트 썸네일 원본
   thumbCrop?: CropValue;
   headerImgId?: string;      // 헤더 이미지 (v1.5 — 풀폭 블러 + 페이드아웃)
   headerCrop?: CropValue;    // 헤더 위치 크롭 (원본 무손실)
   headerRemoved?: boolean;   // 헤더 제거 상태 (v1.9 — AU 편집에서 "없음 명시" 저장용)
+  headerBlur?: number;       // 헤더 흐림 px (커플홈 사용자 요청) — 0이면 흐리지 않음
   themeFollow?: boolean;     // AU 편집: true면 기존(base) 페이지 테마 따라가기 (v1.9)
   illuBg?: string;           // 전신/일러 스위치 배경색 (v1.9 — 미지정: 테마)
   illuOn?: string;           // 전신/일러 스위치 선택색 (미지정: 포인트색)
@@ -50,15 +54,18 @@ export interface RelFormValue {
   themeColor?: string;          // 별도 테마컬러 (custom일 때)
   themeTone?: 'dark' | 'light'; // 테마컬러의 다크/라이트 느낌
   cp: RelCpTag;              // CP/NCP (v1.9) — AU별로는 AU 관리에서 따로 지정
+  cpText?: string;           // CP 뱃지 문구 (커플홈) — 비우면 CP/NCP
   fulls?: Record<string, string | undefined>;  // 멤버별 전신 이미지 (v1.9 — charId → blob id)
   fullScales?: Record<string, number>;         // 전신 크기 % (휠 조절)
   fullOffsets?: Record<string, { x: number; y: number }>; // 전신 위치 오프셋 % (드래그, v1.9)
   quotes?: Record<string, string>;                              // 히어로 좌/우 한마디 문구 (v2.0)
+  names?: Record<string, string>;                               // 이 AU에서 부르는 이름 (커플홈 — AU 편집일 때만)
   nameSizes?: Record<string, number>;                           // 멤버 카드 이름 크기 px (v2.0)
   nameBolds?: Record<string, boolean>;                          // 멤버 카드 이름 볼드 (v2.0 — 기본 켜짐)
   quoteColors?: Record<string, { fg?: string; mark?: string }>; // 히어로 대사 글씨/따옴표색 (페어, v1.9)
   fullFront?: string;                          // 앞에 보일 캐릭터 id
   auName?: string;           // AU별 자관명 (v2.0 사용자 요청 — AU 편집일 때만)
+  auSlug?: string;           // AU 페이지 주소 별명 (커플홈 — AU 편집일 때만) /rels/{자관}?au={slug}
   qaHide?: boolean;          // 문답 답변 숨기기 (v2.0 사용자 요청)
   pickedCharIds: string[];   // 등록 시 연동할 내 캐릭터 (수정 모드에선 빈 배열)
 }
@@ -155,7 +162,7 @@ function ArtThumb({ item, crop }: { item: ArtItem; crop?: CropValue }) {
   return <CropImg src={src} crop={crop} />;
 }
 
-export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSave, onCancel }: {
+export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSave, onCancel, onNewChar }: {
   initial: Relation | null;          // null = 신규 등록
   auId?: string;                     // AU 편집 모드 (v1.9) — 아트·캐치프레이즈·전신이 이 AU의 것
   myChars: Character[];
@@ -163,6 +170,8 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   existingIds?: string[];            // 페이지 주소 중복 검사용 (v1.9 — 신규 등록)
   onSave: (v: RelFormValue) => void;
   onCancel: () => void;
+  /** 캐릭터 새로 만들기 (커플홈) — 캐릭터 목록 페이지가 없으므로 등록 화면에서 바로 간다 */
+  onNewChar?: () => void;
 }) {
   const toast = useToast();
   const del = useConfirmDelete();   // 삭제 확인 모달 (v1.9 — 아트·전신)
@@ -177,8 +186,13 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   const [catchphrase, setCatchphrase] = useState(auObj ? auObj.catchphrase : (initial?.catchphrase ?? ''));
   const [visibility, setVisibility] = useState<Visibility>(initial?.visibility ?? 'public');
   const [cp, setCp] = useState<RelCpTag>(initial?.cp ?? 'cp');   // CP/NCP (v1.9)
+  // CP 뱃지 문구 (커플홈 사용자 요청) — AU 편집이면 그 AU 문구, 없으면 자관 기본. 비우면 CP/NCP
+  const [cpText, setCpText] = useState((auObj?.cpText ?? initial?.cpText) ?? '');
   // AU 편집이면 그 AU에 정한 폰트부터 (v2.0 사용자 제보 — AU 폰트가 분리되지 않던 것)
   const [fontId, setFontId] = useState((auObj?.fontId ?? initial?.fontId) ?? 'serif');
+  // 자관명 크기·굵게 (커플홈 사용자 요청) — AU 편집이면 그 AU 값, 없으면 자관 기본
+  const [titleSize, setTitleSize] = useState((auObj?.titleSize ?? initial?.titleSize) ?? 64);
+  const [titleBold, setTitleBold] = useState((auObj?.titleBold ?? initial?.titleBold) ?? true);
   const [bodyFontId, setBodyFontId] = useState((auObj?.bodyFontId ?? initial?.bodyFontId) ?? 'default');
   const [picked, setPicked] = useState<string[]>([]);
   const [arts, setArts] = useState<ArtItem[]>(() => {
@@ -196,6 +210,8 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   const initHeaderCrop = auObj ? auObj.headerCrop : initial?.headerCrop;
   const [headerCrop, setHeaderCrop] = useState<CropValue | undefined>(initHeaderCrop);
   const [headerCropOpen, setHeaderCropOpen] = useState(false);
+  // 헤더 흐림 정도 (커플홈 사용자 요청) — 0이면 흐리지 않음. AU 편집이면 그 AU 것, 없으면 기본값
+  const [headerBlur, setHeaderBlur] = useState<number>((auObj ? auObj.headerBlur : initial?.headerBlur) ?? HEADER_BLUR_DEFAULT);
   // 페이지 테마 (v1.9 AU별) — AU 편집: 기존(base) 따라가기 또는 이 AU 전용 테마
   const [themeFollow, setThemeFollow] = useState<boolean>(auObj ? auObj.theme === undefined : false);
   const [themeMode, setThemeMode] = useState<'site' | 'custom'>(
@@ -233,8 +249,16 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   const [pageBgAngle, setPageBgAngle] = useState(st?.pageBgAngle ?? 180);
   const [charQuery, setCharQuery] = useState('');
   // 전신 이미지 (v1.9 — 페어 · 수정 모드) — AU 편집이면 그 AU의 전신
-  const pairMembers = !isNew && (initial!.kind ? initial!.kind === 'pair' : initial!.members.length === 2)
-    ? initial!.members.slice(0, 2) : [];
+  // 왼쪽 → 오른쪽 순서는 자관 상세와 같게 — 상세에서 좌우를 바꿨으면(pairRight) 그 자리대로 (커플홈 사용자 제보:
+  // 좌우를 바꿔도 여기의 「왼쪽·오른쪽」 이름표와 전신 미리보기는 등록 순서 그대로였다)
+  const pairMembers = (() => {
+    if (isNew || !(initial!.kind ? initial!.kind === 'pair' : initial!.members.length === 2)) return [];
+    const ms = initial!.members.slice(0, 2);
+    const right = initial!.pairRight;
+    return right && ms.some(m => m.charId === right)
+      ? [...ms.filter(m => m.charId !== right), ...ms.filter(m => m.charId === right)]
+      : ms;
+  })();
   const [fulls, setFulls] = useState<Record<string, FullDraft>>(() => {
     const o: Record<string, FullDraft> = {};
     for (const m of pairMembers) {
@@ -254,6 +278,9 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   // 히어로 좌/우 한마디 — 색만 정할 수 있고 문구를 고칠 곳이 없었다 (v2.0 사용자 발견)
   const [quotes, setQuotes] = useState<Record<string, string>>(
     () => Object.fromEntries(pairMembers.map(m => [m.charId, mOf(m).quote ?? ''])));
+  // 이 AU에서 부르는 이름 (커플홈 사용자 요청) — AU 편집일 때만. 비우면 캐릭터 이름 그대로
+  const [names, setNames] = useState<Record<string, string>>(
+    () => Object.fromEntries(pairMembers.map(m => [m.charId, auObj?.mset?.[m.charId]?.name ?? ''])));
   // 멤버 카드 이름 크기 (v2.0) — 카드 폭이 좁아 이름마다 알맞은 크기가 다르다
   const [nameSizes, setNameSizes] = useState<Record<string, number>>(
     () => Object.fromEntries(pairMembers.map(m => [m.charId, mOf(m).nameSize ?? 17])));
@@ -265,6 +292,8 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
     () => Object.fromEntries(pairMembers.map(m => [m.charId, { fg: mOf(m).quoteColor, mark: mOf(m).quoteMarkColor }])));
   // AU별 자관명 (v2.0 사용자 요청) — 비우면 자관 이름 그대로
   const [auName, setAuName] = useState(auObj?.name ?? '');
+  // AU 페이지 주소 별명 (커플홈 사용자 요청) — /rels/{자관}?au={slug}. 비우면 AU id
+  const [auSlug, setAuSlug] = useState(auObj?.slug ?? '');
   // 문답 답변 가리기 (v2.0 사용자 요청) — 질문은 그대로 두고 답변 내용만
   const [qaHide, setQaHide] = useState(!!initial?.qaHide);
   // 전신 앞뒤도 AU별 (v2.0) — AU에서 바꾼 앞뒤가 원본·다른 AU를 건드리지 않게
@@ -301,6 +330,13 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   };
 
   const save = async () => {
+    // AU 주소 별명 (커플홈) — 형식 확인 + 같은 자관의 다른 AU와 겹치지 않게
+    if (auObj && auSlug.trim()) {
+      if (!isValidSlug(auSlug.trim())) { toast('AU 주소는 영문 소문자·숫자·하이픈만 쓸 수 있습니다'); return; }
+      if (initial?.aus.some(a => a.id !== auObj.id && (a.slug === auSlug.trim() || a.id === auSlug.trim()))) {
+        toast('이미 다른 AU가 쓰는 주소입니다 — 다른 주소를 입력해 주세요'); return;
+      }
+    }
     if (!name.trim()) { toast('자관 이름을 입력해 주세요'); return; }
     // 페이지 주소 (v1.9 / 수정도 가능 v2.0) — 유효성·중복 검사
     if (slug && slug !== (initial?.slug ?? '')) {
@@ -311,13 +347,15 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
     onSave({
       // 수정에서 정한 주소는 별명으로 (v2.0) — 신규는 rels/new가 이 값을 id로 쓴다
       slug: slug.trim() || undefined,
-      name: name.trim().toUpperCase(),
+      // 입력한 그대로 저장 (커플홈 사용자 요청 — 영문을 쓰면 무조건 대문자로 바뀌었다)
+      name: name.trim(),
       catchphrase: catchphrase.trim(),
-      kind, visibility, fontId, bodyFontId,
+      kind, visibility, fontId, bodyFontId, titleSize, titleBold,
       arts: artIds,
       thumbCrop,
       headerImgId: headerFile ? await putBlob(headerFile) : (headerRemoved ? undefined : initHeaderId),
       headerCrop: headerRemoved ? undefined : headerCrop,
+      headerBlur: headerRemoved ? undefined : headerBlur,
       headerRemoved,
       themeFollow,
       illuBg: illuCustom ? illuBg : undefined,
@@ -337,8 +375,9 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
       themeMode,
       themeColor: themeMode === 'custom' ? themeColor : undefined,
       themeTone: themeMode === 'custom' ? themeTone : undefined,
-      cp,
+      cp, cpText: cpText.trim() || undefined,
       auName: auObj ? auName.trim() : undefined,
+      auSlug: auObj ? auSlug.trim() : undefined,
       qaHide: qaHide || undefined,
       fulls: pairMembers.length
         ? Object.fromEntries(await Promise.all(pairMembers.map(async m => {
@@ -349,6 +388,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
       fullScales: pairMembers.length ? fullScales : undefined,
       fullOffsets: pairMembers.length ? fullOffsets : undefined,
       quotes: pairMembers.length ? quotes : undefined,
+      names: auObj && pairMembers.length ? names : undefined,
       nameSizes: pairMembers.length ? nameSizes : undefined,
       nameBolds: pairMembers.length ? nameBolds : undefined,
       quoteColors: pairMembers.length ? quoteColors : undefined,
@@ -406,11 +446,16 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
                     </span>} />
                 </div>
               ))}
-              {myChars.length === 0 && <p className="hint">등록된 캐릭터가 없습니다 — 캐릭터를 먼저 등록해 주세요</p>}
+              {myChars.length === 0 && <p className="hint">등록된 캐릭터가 없습니다 — 아래 「＋ 캐릭터 만들기」로 먼저 만들어 주세요</p>}
               {myChars.length > 0 && shownChars.length === 0 && <p className="hint">검색 결과가 없습니다</p>}
             </div>
             {hiddenCount > 0 && <p className="hint" style={{ marginTop: 6 }}>외 {hiddenCount}명 — 검색으로 찾아 주세요</p>}
             <p className="hint">상대(타인) 캐릭터는 자관 상세에서 [＋ 멤버 추가]로 등록합니다</p>
+            {onNewChar && (
+              <button type="button" className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }}
+                data-tip="캐릭터를 만든 뒤 이 화면으로 돌아옵니다 — 여기서 입력 중인 내용은 저장되지 않습니다"
+                onClick={onNewChar}>＋ 캐릭터 만들기</button>
+            )}
           </div>
         )}
 
@@ -520,8 +565,24 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
             )}
             <p className="hint" style={{ margin: '4px 0 0' }}>드래그 = 위치 · 휠 = 크기 · 우클릭 = 앞으로/뒤로 — 미리보기 비율이 상세 화면과 동일합니다</p>
 
+            {/* 이 AU에서 부르는 이름 (커플홈 사용자 요청 — 「AU가 바뀌면 이름도 바뀔 수 있는데 바꿀 데가 없다」).
+                자관 페이지의 멤버 카드·목록에 쓴다. 캐릭터 페이지의 AU 프로필과는 별개 */}
+            {auObj && (
+              <>
+                <label className="k-label" style={{ margin: '10px 0 0' }}>이름 — 이 AU에서 부르는 이름</label>
+                {pairMembers.map((m, i) => (
+                  <div key={m.charId} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <b style={{ fontSize: 12, width: 92, flexShrink: 0 }}>{i === 0 ? '왼쪽' : '오른쪽'} · {memberNames?.[m.charId] ?? m.charId}</b>
+                    <KInput value={names[m.charId] ?? ''}
+                      onChange={e => setNames(s => ({ ...s, [m.charId]: e.target.value }))}
+                      placeholder="비우면 캐릭터 이름 그대로" style={{ flex: 1 }} />
+                  </div>
+                ))}
+              </>
+            )}
+
             {/* 좌/우 한마디 문구 (v2.0 사용자 발견 — 색만 있고 문구 칸이 없었다) */}
-            <label className="k-label" style={{ margin: '10px 0 0' }}>한마디 — 상단 좌/우 대사</label>
+            <label className="k-label" style={{ margin: '10px 0 0' }}>한마디 — 상단 좌/우 대사{auObj ? ' (이 AU에서만)' : ''}</label>
             {pairMembers.map((m, i) => (
               <div key={m.charId} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <b style={{ fontSize: 12, width: 92, flexShrink: 0 }}>{i === 0 ? '왼쪽' : '오른쪽'} · {memberNames?.[m.charId] ?? m.charId}</b>
@@ -575,7 +636,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
               }
             })}>
             {headerUrl ? (
-              <div style={{ position: 'absolute', inset: 0, filter: 'blur(2px)' }}>
+              <div style={{ position: 'absolute', inset: 0, filter: `blur(${Math.round(headerBlur / 8)}px)` }}>
                 <CropImg src={headerUrl} crop={headerCrop} />
               </div>
             ) : (!headerRemoved && initHeaderId) ? (
@@ -602,6 +663,15 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
             </>
           )}
         </div>
+        {/* 흐림 (커플홈 사용자 요청 — "헤더 이미지를 흐리지 않게 하는 것과 흐림 정도 조절") — 끄면 원본 그대로 */}
+        {(headerUrl || (!headerRemoved && initHeaderId)) && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="cp-lb">흐림</span>
+            <KCheck label="흐리게" checked={headerBlur > 0} onChange={(v: boolean) => setHeaderBlur(v ? HEADER_BLUR_DEFAULT : 0)} />
+            {headerBlur > 0 && <KStep value={headerBlur} min={2} max={40} step={2} suffix="px" onChange={setHeaderBlur} />}
+            <small className="hint" style={{ margin: 0 }}>{headerBlur > 0 ? `숫자가 클수록 더 흐려집니다 (기본 ${HEADER_BLUR_DEFAULT})` : '원본 그대로 깔립니다'}</small>
+          </div>
+        )}
         {headerCropOpen && (headerUrl || (!headerRemoved && initHeaderId)) && (
           <HeaderCrop src={headerUrl} refId={!headerUrl ? initHeaderId : undefined} crop={headerCrop}
             onClose={() => setHeaderCropOpen(false)}
@@ -646,6 +716,16 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
                   style={{ fontFamily: familyOf(fontId), letterSpacing: '.1em' }} />
                 <p className="hint" style={{ margin: '5px 0 0' }}>
                   이 AU를 볼 때만 쓰는 이름 — 비우면 자관 이름을 그대로 씁니다
+                </p>
+                {/* AU 페이지 주소 (커플홈 사용자 요청 — 「AU 페이지도 AU 프로필도 고유 주소를」).
+                    /rels/{자관}?au={주소}. 멤버의 AU 프로필 주소(?au=)에도 같은 별명을 쓴다 */}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--faint)', whiteSpace: 'nowrap' }}>?au=</span>
+                  <KInput placeholder={`AU 주소 (비우면 ${auObj.id})`} value={auSlug}
+                    onChange={e => setAuSlug(slugify(e.target.value))} style={{ flex: 1 }} />
+                </div>
+                <p className="hint" style={{ margin: '5px 0 0' }}>
+                  이 AU 페이지의 주소 — 영문 소문자·숫자·하이픈. 캐릭터의 AU 프로필 주소(?au=)에도 그대로 쓰입니다
                 </p>
               </div>
             )}
@@ -706,6 +786,12 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
                 ))}
               </div>
             </div>
+            {/* 뱃지 문구 (커플홈 사용자 요청) — 자관명 위 뱃지에 CP/NCP 대신 쓸 글. 비우면 CP/NCP */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="cp-lb">뱃지 문구</span>
+              <KInput placeholder={`비우면 ${CP_LABEL[cp]}`} value={cpText} maxLength={24}
+                onChange={e => setCpText(e.target.value)} style={{ flex: 1 }} />
+            </div>
             {/* 뱃지 색 (v2.0 사용자 요청) — 자관명 위에 뜨는 CP/NCP 표시. AU마다 따로 */}
             {(
               <div>
@@ -721,7 +807,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
                     <div className="cf-row">
                       <span className="cp-lb">미리보기</span>
                       <span className="pill" style={{ background: cpTagBg, color: cpTagFg, borderColor: cpTagBg }}>
-                        {CP_LABEL[cp]}
+                        {cpText.trim() || CP_LABEL[cp]}
                       </span>
                     </div>
                   </div>
@@ -731,6 +817,12 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
             <p className="hint" style={{ margin: '2px 0 0' }}>이름 폰트 — 상세 대형 타이틀에 적용</p>
             <KSelect value={fontId} onChange={setFontId}
               options={fonts.map(f => ({ value: f.id, label: <span style={{ fontFamily: deVarFamily(f.family) }}>{f.name}</span> }))} />
+            {/* 자관명 크기·굵게 (커플홈 사용자 요청) — 캐릭터 이름과 같은 방식. 폰트마다 알맞은 크기가 달라 직접 정한다 */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="k-label" style={{ margin: 0, flex: 1 }}>자관명 크기</span>
+              <KCheck label="Bold" checked={titleBold} onChange={setTitleBold} />
+              <KStep value={titleSize} onChange={setTitleSize} min={24} max={120} step={1} suffix="px" />
+            </div>
             <p className="hint" style={{ margin: '2px 0 0' }}>본문 폰트 — 카드 소개·타임라인·문답 텍스트에 적용</p>
             <KSelect value={bodyFontId} onChange={setBodyFontId}
               options={fonts.map(f => ({ value: f.id, label: <span style={{ fontFamily: deVarFamily(f.family) }}>{f.name}</span> }))} />

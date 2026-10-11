@@ -50,9 +50,9 @@ function RelEditInner() {
             ...r,
             name: v.name, kind: v.kind, visibility: v.visibility,
             // 폰트는 AU 편집이면 그 AU에만 (v2.0 사용자 제보 — 여태 원본에 저장돼 전체가 같이 바뀌었다)
-            ...(auObj ? {} : { fontId: v.fontId, bodyFontId: v.bodyFontId }),
+            ...(auObj ? {} : { fontId: v.fontId, bodyFontId: v.bodyFontId, titleSize: v.titleSize, titleBold: v.titleBold, cpText: v.cpText }),
             // 헤더는 AU 편집이면 그 AU에만 저장 — base 헤더는 유지 (v1.9 AU별 헤더 분리)
-            ...(auObj ? {} : { headerImgId: v.headerImgId, headerCrop: v.headerCrop, slug: v.slug }),
+            ...(auObj ? {} : { headerImgId: v.headerImgId, headerCrop: v.headerCrop, headerBlur: v.headerBlur, slug: v.slug }),
             // 페이지 테마 — AU 편집이면 그 AU에만 (base 테마는 유지, v1.9)
             ...(auObj ? {} : { themeMode: v.themeMode, themeColor: v.themeColor, themeTone: v.themeTone, illuBg: v.illuBg, illuOn: v.illuOn, nameColor: v.nameColor, cpColor: v.cpColor, cpTagBg: v.cpTagBg, cpTagFg: v.cpTagFg,
                 nameShadowColor: v.nameShadowColor, nameShadow: v.nameShadow,
@@ -85,8 +85,11 @@ function RelEditInner() {
                   ...a, arts: v.arts, catchphrase: v.catchphrase,
                   // AU별 자관명 (v2.0 사용자 요청) — 비우면 자관 이름 그대로 쓰게 아예 지운다
                   name: v.auName?.trim() ? v.auName.trim() : undefined,
+                  slug: v.auSlug?.trim() || undefined,   // AU 페이지 주소 별명 (커플홈) — 비우면 id
                   // AU별 폰트·전신 앞뒤 (v2.0 사용자 제보) — 원본이 아니라 이 AU에 담는다
                   fontId: v.fontId, bodyFontId: v.bodyFontId, fullFront: v.fullFront,
+                  titleSize: v.titleSize, titleBold: v.titleBold,   // 자관명 크기·굵게 (커플홈)
+                  cpText: v.cpText,                                   // CP 뱃지 문구 (커플홈)
                   // AU별 색·배경 (v2.0 사용자 요청) — 「직접 지정」을 끄면 undefined가 되어
                   // 자관 값으로 되돌아간다(auStyle이 묶음 단위로 판정한다)
                   style: {
@@ -104,6 +107,7 @@ function RelEditInner() {
                     fullOffX: v.fullOffsets?.[m.charId]?.x,
                     fullOffY: v.fullOffsets?.[m.charId]?.y,
                     quote: v.quotes?.[m.charId],
+                    name: v.names?.[m.charId]?.trim() || undefined,   // 이 AU에서 부르는 이름 (커플홈) — 비우면 지운다
                     nameSize: v.nameSizes?.[m.charId],
                     nameBold: v.nameBolds?.[m.charId],
                     quoteColor: v.quoteColors?.[m.charId]?.fg,
@@ -112,6 +116,7 @@ function RelEditInner() {
                   // AU별 헤더 (v1.9) — 제거하면 "없음 명시"(null): base 헤더로 되돌아가지 않음
                   headerImgId: v.headerRemoved ? undefined : v.headerImgId,
                   headerCrop: v.headerRemoved ? undefined : v.headerCrop,
+                  headerBlur: v.headerRemoved ? undefined : v.headerBlur,   // 흐림 정도 (커플홈)
                   // AU별 페이지 테마 — 기존 따라가기면 미지정 (v1.9)
                   theme: v.themeFollow ? undefined : { mode: v.themeMode, color: v.themeColor, tone: v.themeTone },
                   fulls: v.fulls

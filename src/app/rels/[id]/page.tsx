@@ -7,30 +7,35 @@ import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/ThemeProvider';
-import { useLocalList, newId } from '@/lib/postStore';
+import { useLocalList, newId, todayYmd } from '@/lib/postStore';
 import {
   Relation, REL_SEED, Character, CHAR_SEED, RelMember, QaEntry, QaAnswer, TlItem, findChar, Visibility, CharGrant,
   auMember, auStyle, fullShadow, hasRelGrant,
   RelAu, RelCpTag, charWithAu, charGrant,
   QaAnswerRow, QA_KEY, QA_SEED, MergedAnswer, answersFor,
-  findByKey, charPath,
+  findByKey, charPath, relPath, openableRels, relMenuHref, auParamOf, relFaceCrop,
 } from '@/lib/charStore';
 import { RelQuestionSet, RELQ_SEED, RELQ_KEY, CP_LABEL } from '@/lib/relqStore';
 import { putBlob } from '@/lib/blobStore';
 import { GrantsEditor } from '@/components/chars/GrantsEditor';
-import { TrpgLog, TRPG_SEED } from '@/lib/galleryStore';
-import { RpRoom, RP_SEED } from '@/lib/rpStore';
+import { TrpgLog, TRPG_SEED, logPath } from '@/lib/galleryStore';
+import { RpRoom, RP_SEED, rpMemberIds } from '@/lib/rpStore';
+import { useMembers, adminIdsOf } from '@/lib/members';
+import { HEADER_BLUR_DEFAULT } from '@/lib/charStore';
 import { useFonts } from '@/lib/fontStore';
+import { useMainStore } from '@/lib/mainStore';
+import { useMenuSettings, removeFromTree, defaultTree } from '@/lib/menuStore';
 import { Tip, KInput, KTextarea, KSelect, KRadio, KCheck } from '@/components/ui/Kit';
 import { Modal, ConfirmModal, useConfirmDelete } from '@/components/ui/Modal';
 import { ColorField } from '@/components/ui/ColorField';
-import { withAlpha } from '@/lib/color';
+import { withAlpha, phStyle } from '@/lib/color';
 import { DragList } from '@/components/ui/DragList';
 import { BlobImg, useBlobUrl } from '@/lib/blobStore';
 import { CroppedBlobImg, CropEditor, type CropValue } from '@/components/ui/CropEditor';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { useToast } from '@/components/ui/Toast';
 import { PageTitle } from '@/components/ui/PageText';
+import { InkFit } from '@/components/ui/InkFit';
 
 /** 전신 이미지 — 비율 유지, 하단 정렬, 크기 %는 자관 수정 미리보기에서 지정 (v1.9) */
 // 전신 그림자는 「그림자 직접 지정」의 색·강도를 따른다 (v2.0 사용자 요청) — 자관명 그림자와 같은 설정
@@ -61,7 +66,8 @@ function CharFace({ c, className, style }: {
   c?: Character; className?: string; style?: React.CSSProperties;
 }) {
   const rep = c?.thumbId ?? c?.arts?.[0];
-  if (!rep) return <div className={`${className ?? ''} ph ${c?.thumbClass ?? ''}`} style={style} />;
+  // 이미지가 없으면 캐릭터 테마색 자리표시자 (커플홈 사용자 요청)
+  if (!rep) return <div className={`${className ?? ''} ph ${c?.thumbClass ?? ''}`} style={{ ...phStyle([c?.color]), ...style }} />;
   return (
     <div className={className} style={{ position: 'relative', overflow: 'hidden', ...style }}>
       <CroppedBlobImg fileRef={rep} crop={c?.thumbCrop} />
@@ -101,6 +107,8 @@ function MiniProf({ member, char, isAdmin, onGo, onRemove, auUnregistered, side,
   onFaceCrop?: (ref: string) => void;   // 얼굴칸(1:1) 크롭 다시 잡기 (v2.0)
 }) {
   const { familyOf } = useFonts();   // 이름은 캐릭터 프로필에서 지정한 폰트로
+  // 지정이 없으면 기본 세리프 원본 — 타이틀 폰트(로고 등)를 따라가지 않는다 (커플홈 사용자 요청)
+  const nameFont = (id?: string) => familyOf(id) ?? 'var(--serif-base)';
   const [lb, setLb] = useState<number | null>(null);
   // 멤버 제거는 우클릭 메뉴로 — 카드 아래에 상시 노출하면 정보가 아닌 것이 자리를 먹는다 (사용자 확정)
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
@@ -126,7 +134,7 @@ function MiniProf({ member, char, isAdmin, onGo, onRemove, auUnregistered, side,
   if (auUnregistered) {
     return (
       <div className="panel mini-prof" onClick={onGo} style={{ cursor: 'var(--cur-pointer,pointer)', textAlign: 'center', padding: '44px 20px' }}>
-        <b style={{ fontSize: 15, letterSpacing: '.08em', fontFamily: familyOf(char.fontId) }}>{char.name}</b>
+        <b style={{ fontSize: 15, letterSpacing: '.08em', fontFamily: nameFont(char.fontId) }}>{char.name}</b>
         <p className="hint" style={{ marginTop: 10 }}>이 AU의 프로필이 아직 등록되지 않았습니다<br />카드를 누르면 캐릭터 페이지에서 등록할 수 있습니다</p>
       </div>
     );
@@ -144,23 +152,23 @@ function MiniProf({ member, char, isAdmin, onGo, onRemove, auUnregistered, side,
             <CroppedBlobImg fileRef={rep} crop={member.faceCrop ?? char.thumbCrop} />
           </div>
         ) : (
-          <div className={`face ph ${char.thumbClass}`} />
+          <div className={`face ph ${char.thumbClass}`} style={phStyle([char.color])} />
         )}
         <div>
           {/* 이름 폰트는 캐릭터 프로필에서 지정한 것을 그대로 쓰고,
               크기는 이 자관에서 정한 값 (자관 수정의 「이름 크기」 — 기본 17px, v2.0) */}
-          <b style={{
-            fontFamily: familyOf(char.fontId), fontSize: member.nameSize ?? undefined,
+          {/* 세로 자리는 글자 모양만큼 (커플홈) — 필기체 등 위아래로 긴 폰트가 아래 소개 줄을 덮지 않게 */}
+          <InkFit as="b" text={char.name} style={{
+            fontFamily: nameFont(char.fontId), fontSize: member.nameSize ?? undefined,
             // 굵기는 끌 수 있다 (v2.0 사용자 요청) — 기본은 지금처럼 굵게(<b>)
             fontWeight: (member.nameBold ?? true) ? undefined : 400,
-          }}>
-            {char.name}
-          </b>
+          }} />
           <small>{[char.sub, noteOf(member)].filter(Boolean).join(' · ')}</small>
         </div>
       </div>
       <div className="specs">
-        {char.specs.map(s => <div key={s.label}><b>{s.label}</b> {s.value}</div>)}
+        {/* 이름표 칸은 제일 긴 이름표 기준으로 맞춘다 (커플홈 사용자 제보 — 「생년월일」 넉 자가 혼자 튀어나왔다) */}
+        {char.specs.map(s => <div key={s.label}><b>{s.label}</b><span>{s.value}</span></div>)}
       </div>
       {/* 캐릭터의 지금 색 팔레트를 그대로 읽는다 (v2.0 사용자 발견).
           예전엔 멤버를 추가할 때 복사해 둔 member.palette 스냅샷을 보여 줘서, 캐릭터 쪽에서 색을
@@ -241,10 +249,19 @@ export default function RelDetailPage() {
   const { user, isAdmin } = useAuth();
   const toast = useToast();
   const { familyOf } = useFonts();
+  // 관리 버튼(EDIT·DELETE·＋ RELATION·AU ＋·멤버·기록 추가…)은 프로필 메뉴의 편집모드를 켰을 때만 보인다
+  // (커플홈 사용자 요청 — 깔끔한 화면을 보려고 로그아웃하기 귀찮다). 권한 판정은 그대로 isAdmin
+  const { editOn } = useMainStore();
+  const tool = isAdmin && editOn;
+  const [ms, patchMenu] = useMenuSettings();   // 자관을 지우면 메뉴 항목도 뺀다 (커플홈 — 자관마다 메뉴 항목)
+  // 캐릭터 이름 폰트 — 지정이 없으면 기본 세리프 원본 (커플홈: 타이틀 폰트를 따라가지 않는다)
+  const nameFont = (id?: string) => familyOf(id) ?? 'var(--serif-base)';
   const [rels, setRels, loaded] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
   const [chars, setChars, charsLoaded] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   const [logs] = useLocalList<TrpgLog>('ohome.trpg.v1', TRPG_SEED);
   const [rooms] = useLocalList<RpRoom>('ohome.rp.v1', RP_SEED);
+  const membersAll = useMembers();
+  const adminIds = adminIdsOf(membersAll);   // 자관 기반 방은 운영자 자캐가 있으면 관리자도 당사자 (커플홈)
   const [tab, setTab] = useState<'tl' | 'qa'>('tl');
   const [auId, setAuId] = useState('base');
   const [oneMode, setOneMode] = useState<boolean | null>(null);
@@ -358,6 +375,27 @@ export default function RelDetailPage() {
 
   // 별명 주소로도 열린다 (v2.0 사용자 요청 — 주소를 나중에 바꿔도 옛 주소가 살아 있게)
   const rel = findByKey(rels, id);
+  // 자관 전환 칩으로 다른 자관에 가면 같은 페이지가 재사용될 수 있다 — 보던 AU·일러·탭을 처음 상태로
+  useEffect(() => { setAuId('base'); setArtIdx(0); setQaNo(null); setTab('tl'); }, [id]);
+  // 주소의 ?au= (별명 또는 id)로 들어오면 그 AU를 펼친 채 시작 (커플홈 사용자 요청 — AU 페이지의 고유 주소)
+  useEffect(() => {
+    if (!rel) return;
+    const p = new URLSearchParams(window.location.search).get('au');
+    if (!p) return;
+    const a = rel.aus.find(x => x.id !== 'base' && (x.slug?.trim() === p || x.id === p));
+    if (a) setAuId(a.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rel?.id, loaded]);
+  /** AU 고르기 — 화면과 함께 주소(?au=)도 바꿔 두어 그대로 복사해 공유할 수 있게. 원본이면 뗀다 */
+  const selectAu = (next: string) => {
+    setAuId(next);
+    try {
+      const u = new URL(window.location.href);
+      if (next === 'base') u.searchParams.delete('au');
+      else u.searchParams.set('au', rel?.aus.find(x => x.id === next)?.slug?.trim() || next);
+      window.history.replaceState(null, '', u.toString());
+    } catch { /* 무시 */ }
+  };
 
   // 자관별 페이지 테마 (4.18 방식) — 별도 테마컬러면 홈 전체 팔레트를 임시 전환, 벗어나면 원복.
   // AU별 (v1.9): AU에 테마를 지정했으면 그것, 미지정이면 base(원본) 테마 따라가기
@@ -387,14 +425,16 @@ export default function RelDetailPage() {
 
   // 삭제된 캐릭터를 가리키는 멤버 자동 정리 — 카드도 안 뜨고 [＋ 멤버 추가]도
   // 안 나오는 유령 슬롯이 남지 않게 (캐릭터 삭제 기능 도입에 따른 정합성 보정)
+  // **관리자만 정리한다** (커플홈) — 방문자에게는 비공개 캐릭터가 목록에 안 와서 「삭제된 것」처럼 보이고,
+  // 저장 권한도 없어 실패한 뒤 서버 값으로 되돌아오면 다시 정리를 시도하는 되풀이가 됐다
   useEffect(() => {
-    if (!loaded || !charsLoaded || !rel) return;
+    if (!isAdmin || !loaded || !charsLoaded || !rel) return;
     const alive = rel.members.filter(m => chars.some(c => c.id === m.charId));
     if (alive.length !== rel.members.length) {
       setRels(rels.map(r => (r.id === rel.id ? { ...r, members: alive } : r)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, charsLoaded, rel?.id, rel?.members.length, chars.length]);
+  }, [isAdmin, loaded, charsLoaded, rel?.id, rel?.members.length, chars.length]);
 
   const isDuo = rel ? (rel.kind ? rel.kind === 'pair' : rel.members.length === 2) : false;
   const au = rel?.aus.find(a => a.id === auId) ?? rel?.aus[0];
@@ -405,6 +445,9 @@ export default function RelDetailPage() {
   const auFont = (isBaseAu ? undefined : au?.fontId) ?? rel?.fontId;
   const auBodyFont = (isBaseAu ? undefined : au?.bodyFontId) ?? rel?.bodyFontId;
   const auFullFront = (isBaseAu ? undefined : au?.fullFront) ?? rel?.fullFront;
+  // 자관명 크기·굵게 (커플홈) — AU에 정해 뒀으면 그 값, 없으면 자관 기본 (굵게가 기본)
+  const auTitleSize = (isBaseAu ? undefined : au?.titleSize) ?? rel?.titleSize;
+  const auTitleBold = ((isBaseAu ? undefined : au?.titleBold) ?? rel?.titleBold) ?? true;
   const auTimeline = (isBaseAu ? rel?.timeline : au?.timeline) ?? [];
   const auQuestions = (isBaseAu ? rel?.questions : au?.questions) ?? [];
   const curArt = auArts[Math.min(artIdx, Math.max(0, auArts.length - 1))];
@@ -463,14 +506,19 @@ export default function RelDetailPage() {
   const auCharKey = rel && !isBaseAu && au ? `${rel.id}:${au.id}` : null;
   const charOf = (cid: string) => {
     const c = findChar(chars, cid);
-    return c && auCharKey ? charWithAu(c, auCharKey) : c;
+    if (!c || !auCharKey) return c;
+    // 이 AU에서 부르는 이름을 자관 수정(AU)에서 정했으면 그것 (커플홈 사용자 요청) — AU 프로필 이름보다 우선
+    const auName = au?.mset?.[cid]?.name?.trim();
+    const merged = charWithAu(c, auCharKey);
+    return auName ? { ...merged, name: auName } : merged;
   };
   // AU 선택 중 그 캐릭터의 AU 프로필 미등록 여부 + 캐릭터 페이지 링크(au 유지) (v1.9)
   const auUnregOf = (cid: string) => !!auCharKey && !findChar(chars, cid)?.auProfiles?.[auCharKey];
   // 캐릭터 별명 주소 우선 (v2.0) — 없으면 id 그대로
   const charHref = (cid: string) => {
     const base = charPath(charOf(cid) ?? { id: cid });
-    return auCharKey ? `${base}?au=${encodeURIComponent(auCharKey)}` : base;
+    // AU 프로필 주소 별명이 있으면 그것, 없으면 자관 AU 별명, 그것도 없으면 키 (커플홈)
+    return auCharKey ? `${base}?au=${encodeURIComponent(auParamOf(findChar(chars, cid), rels, auCharKey))}` : base;
   };
   const sideOf = (cid: string) => (isDuo && rel?.members[1]?.charId === cid ? 'r' : 'l');
 
@@ -482,11 +530,19 @@ export default function RelDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rel, auId, qaQuery],
   );
-  const relLogs = useMemo(() => logs.filter(l => l.relId === rel?.id), [logs, rel]);
-  // 역극 연동 (4.9) — 내가 참여한 방 + 공개 전환된 완결 방만 (비참여 방은 존재 자체 비노출)
-  const relRooms = useMemo(() => rooms.filter(rm => rm.relId === rel?.id
-    && ((user && rm.memberIds.includes(user.id)) || (rm.status === 'done' && rm.isPublic))),
-    [rooms, rel, user]);
+  // 역극·로그는 **보고 있는 AU의 것만** (사용자 요청 — AU 역극이 원본 페이지에도 떠서 뒤섞였다).
+  // auId가 없는 방·로그는 원본(base) 것이다
+  // 방·로그의 AU — 없거나 지워진 AU는 원본(base)으로 (lounell)
+  const auKeyOf = (id?: string) => (id && id !== 'base' && rel?.aus.some(x => x.id === id) ? id : 'base');
+  const relLogs = useMemo(() => logs.filter(l => l.relId === rel?.id && (l.auId ?? 'base') === auId), [logs, rel, auId]);
+  // 역극 연동 (4.9) — 내가 참여한 방 + 공개 전환된 완결 방만 (비참여 방은 존재 자체 비노출).
+  // 참여자는 역극 페이지와 같은 계산(rpMemberIds)으로 — 자관 기반 방은 저장된 memberIds에 개설자만 있어서
+  // 상대 오너에게는 자기가 참여한 역극이 이 목록에 뜨지 않았다 (커플홈 작업 중 발견)
+  const relRooms = useMemo(() => rooms.filter(rm => rm.relId === rel?.id && auKeyOf(rm.auId) === auId
+    && ((user && rpMemberIds(rm, rels, chars, adminIds).includes(user.id)) || (rm.status === 'done' && rm.isPublic))),
+    // 자관 페이지의 역극 목록은 생성 순 그대로 (커플홈 사용자 확정 — 최근 발화 순은 역극 페이지에서만)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rooms, rel, user, rels, chars, auId, adminIds]);
 
   if (!loaded) return <section className="page" />;
   if (!rel || (rel.visibility === 'private' && !isAdmin) || (rel.visibility === 'member' && !user)) {
@@ -576,7 +632,7 @@ export default function RelDetailPage() {
   const addQuestion = () => {
     if (!qText.trim()) { toast('질문을 입력해 주세요'); return; }
     const no = Math.max(0, ...auQuestions.map(q => q.no)) + 1;
-    const entry: QaEntry = { no, q: qText.trim(), date: new Date().toISOString().slice(0, 10), answers: [] };
+    const entry: QaEntry = { no, q: qText.trim(), date: todayYmd(), answers: [] };
     patchAuData({ questions: [entry, ...auQuestions], qaEnabled: true });
     setQOpen(false); setQText(''); setQaNo(no); setTab('qa');
     toast('질문이 등록되었습니다');
@@ -613,7 +669,7 @@ export default function RelDetailPage() {
     const no = Math.max(0, ...auQuestions.map(x => x.no)) + 1;
     patchAuData({
       qaPool: auQaPool.filter((_, j) => j !== i),
-      questions: [{ no, q, date: new Date().toISOString().slice(0, 10), answers: [] }, ...auQuestions],
+      questions: [{ no, q, date: todayYmd(), answers: [] }, ...auQuestions],
       qaEnabled: true,
     });
     setQaNo(no);
@@ -650,7 +706,7 @@ export default function RelDetailPage() {
       if (auQaPool.length > 0) {
         const i = Math.floor(Math.random() * auQaPool.length);
         const no = Math.max(0, cur.no, ...rest.map(x => x.no)) + 1;
-        questions = [{ no, q: auQaPool[i], date: new Date().toISOString().slice(0, 10), answers: [] }, ...rest];
+        questions = [{ no, q: auQaPool[i], date: todayYmd(), answers: [] }, ...rest];
         qaPool = auQaPool.filter((_, j) => j !== i);
       }
       patchAuData({ questions, qaPool, qaEnabled: true });
@@ -776,10 +832,10 @@ export default function RelDetailPage() {
           ? { ...a, mset: { ...a.mset, [cid]: { ...a.mset?.[cid], faceCrop: c } } }
           : a)),
       });
-      return;
+    } else {
+      updateRel({ members: rel.members.map(m => (m.charId === cid ? { ...m, faceCrop: c } : m)) });
     }
-    updateRel({ members: rel.members.map(m => (m.charId === cid ? { ...m, faceCrop: c } : m)) });
-    setFaceEdit(null);
+    setFaceEdit(null);   // AU 쪽도 닫는다 (사용자 제보 — AU에서 SAVE를 눌러도 창이 안 닫혔다)
   };
 
   return (
@@ -791,10 +847,12 @@ export default function RelDetailPage() {
       {(() => {
         const hdrId = isBaseAu ? rel.headerImgId : (au?.headerImgId ?? undefined);
         const hdrCrop = isBaseAu ? rel.headerCrop : au?.headerCrop;
+        // 흐림 정도 (커플홈 사용자 요청) — 0이면 흐리지 않고 원본 그대로, 어둡게·채도 낮추기는 글자가 읽히게 그대로 둔다
+        const hdrBlur = (isBaseAu ? rel.headerBlur : au?.headerBlur) ?? HEADER_BLUR_DEFAULT;
         if (hdrId) {
           return (
             <div className="rel-backdrop">
-              <div className="img custom">
+              <div className="img custom" style={{ filter: `blur(${hdrBlur}px) brightness(.8) saturate(.9)` }}>
                 <CroppedBlobImg fileRef={hdrId} crop={hdrCrop} ph="" />
               </div>
             </div>
@@ -810,7 +868,7 @@ export default function RelDetailPage() {
         );
       })()}
 
-      {(rel.aus.length > 1 || isAdmin) && (
+      {(rel.aus.length > 1 || tool) && (
         <div className="au-list">
           {/* AU 네모에 대표 이미지를 넣는다 (v2.0 사용자 요청 — 색만 들어가 있어 밋밋했다).
               원본은 자관 썸네일(잡아 둔 크롭 그대로), 그 외 AU는 그 AU의 첫 아트 = 대표 이미지.
@@ -820,21 +878,23 @@ export default function RelDetailPage() {
             const thumb = isBase ? (rel.thumbId ?? rel.arts?.[0]) : a.arts?.[0];
             return (
               <div key={a.id} className={`au-item ${auId === a.id ? 'on' : ''}`}
-                onClick={() => { setAuId(a.id); setArtIdx(0); setQaNo(null); }}>
+                onClick={() => { selectAu(a.id); setArtIdx(0); setQaNo(null); }}>
                 <CroppedBlobImg fileRef={thumb} crop={isBase ? rel.thumbCrop : undefined}
-                  ph={['cool', 'pale', 'red'][i % 3]} />
+                  ph={['cool', 'pale', 'red'][i % 3]}
+                  /* 이미지가 없는 AU 네모는 두 사람의 테마색 그라데이션 (커플홈 사용자 요청) */
+                  phStyle={phStyle(rel.members.slice(0, 2).map(m => findChar(chars, m.charId)?.color))} />
                 <small>{a.label}</small>
               </div>
             );
           })}
-          {isAdmin && (
+          {tool && (
             <div className="au-item add" data-tip="AU 추가/관리" onClick={() => setAuOpen(true)}>＋</div>
           )}
         </div>
       )}
 
-      {/* 관리자 액션 (좌상단) */}
-      {isAdmin && (
+      {/* 관리자 액션 (좌상단) — 편집모드일 때만 */}
+      {tool && (
         <div className="rel-admin-actions">
           {/* AU 선택 중이면 그 AU의 일러·캐치프레이즈를 편집 (v1.9) */}
           <button className="btn btn-dark" style={{ height: 30, padding: '0 13px', fontSize: 11 }}
@@ -848,8 +908,28 @@ export default function RelDetailPage() {
             onClick={() => (isBaseAu ? setDelAsk(true) : setAuDelAsk(au!.id))}>
             {isBaseAu ? 'DELETE' : `DELETE ${au!.label}`}
           </button>
+          {/* 커플홈 — 자관 목록 페이지가 없으므로 새 자관은 여기서 */}
+          <button className="btn btn-dark rel-new" style={{ height: 30, padding: '0 13px', fontSize: 11 }}
+            data-tip="새 자관 추가" onClick={() => router.push('/rels/new')}>＋<span className="t"> RELATION</span></button>
         </div>
       )}
+
+      {/* 자관 전환 (커플홈) — 목록 페이지 대신, 자관이 둘 이상일 때만 좌상단에 칩으로.
+          첫 번째(저장 순서)가 메뉴 「자관」으로 들어왔을 때 열리는 대표 자관이다 */}
+      {(() => {
+        const list = openableRels(rels, { isAdmin, loggedIn: !!user });
+        if (list.length < 2) return null;
+        return (
+          <div className={`rel-switch ${tool ? 'under' : ''}`}>
+            {list.map(r => (
+              <button key={r.id} type="button" className={r.id === rel.id ? 'on' : ''}
+                onClick={() => { if (r.id !== rel.id) router.push(relPath(r)); }}>
+                {r.name}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* AU 하나만 삭제 (v2.0 사용자 발견) — 자관 삭제와 확실히 구분되게 무엇이 남는지까지 적는다 */}
       <ConfirmModal open={auDelAsk !== null}
@@ -862,7 +942,7 @@ export default function RelDetailPage() {
             updateRel({ aus: rel.aus.filter(a => a.id !== gone) });
             // 이 AU에 달렸던 문답 답변도 함께 (주인 없는 줄이 남지 않게)
             setQaRows(qaRows.filter(r => !(r.relId === rel.id && r.auId === gone)));
-            if (auId === gone) setAuId('base');
+            if (auId === gone) selectAu('base');
             setAuDelAsk(null);
           } },
           { label: 'CANCEL', kind: 'ghost', onClick: () => setAuDelAsk(null) },
@@ -876,13 +956,15 @@ export default function RelDetailPage() {
             setRels(rels.filter(r => r.id !== rel.id));
             // 자관에 달렸던 문답 답변도 함께 (v2.0 — 따로 저장이라 남기면 주인 없는 줄이 된다)
             setQaRows(qaRows.filter(r => r.relId !== rel.id));
+            patchMenu({ tree: removeFromTree(ms.tree ?? defaultTree(), relMenuHref(rel.id)) });
             router.push('/rels');
           } },
           { label: 'CANCEL', kind: 'ghost', onClick: () => setDelAsk(false) },
         ]} />
 
       <div className="rel-hero">
-        {isDuo && pairSlots[0] && (
+        {/* 한마디가 비어 있으면 따옴표만 남지 않게 아예 그리지 않는다 (AU는 자기 대사만 — auMember) */}
+        {isDuo && pairSlots[0] && !!pairSlots[0].quote?.trim() && (
           <div className="quote l" style={{
             color: pairSlots[0].quoteColor,
             ['--q-mark' as string]: pairSlots[0].quoteMarkColor,
@@ -893,20 +975,23 @@ export default function RelDetailPage() {
           <div className="cp-top">
             <span className="pill" style={auSt.cpTagBg || auSt.cpTagFg
               ? { background: auSt.cpTagBg, color: auSt.cpTagFg, borderColor: auSt.cpTagBg }
-              : undefined}>{CP_LABEL[auCpTag]}</span>
+              : undefined}>{((isBaseAu ? undefined : au?.cpText) ?? rel.cpText)?.trim() || CP_LABEL[auCpTag]}</span>
           </div>
         )}
         {/* 자관명·캐치프레이즈 글씨색 — 직접 지정 시 (v1.9 사용자 요청, 미지정: 테마) */}
         {/* 이름 그림자 — 색·강도 직접 지정 (v2.0 사용자 요청, 미지정: 검정 60% · 기존과 동일) */}
         {/* 이름 자체는 AU마다 다르게 붙일 수 있다 (v2.0 사용자 요청) — 안 정했으면 자관 이름 그대로 */}
-        <h1 style={{
-          fontFamily: familyOf(auFont), color: auSt.nameColor,
+        {/* 크기·굵게는 자관 수정에서 (커플홈 사용자 요청 — AU별, 없으면 자관 기본). 세로 자리는 글자 모양만큼 */}
+        <InkFit as="h1" text={(!isBaseAu && au?.name?.trim()) || rel.name} style={{
+          fontFamily: familyOf(auFont) ?? 'var(--serif-base)', color: auSt.nameColor,
           textShadow: `0 4px 30px ${withAlpha(auSt.nameShadowColor ?? '#000000', 0.6 * ((auSt.nameShadow ?? 100) / 100))}`,
-        }}>{(!isBaseAu && au?.name?.trim()) || rel.name}</h1>
+          ...(auTitleBold ? null : { fontWeight: 400 }),
+          ...(auTitleSize ? { ['--rel-name-size' as string]: `${auTitleSize}px` } : null),
+        }} />
         <div className="catch" style={{ color: auSt.cpColor }}>
           {au?.catchphrase || rel.catchphrase}
         </div>
-        {isDuo && pairSlots[1] && (
+        {isDuo && pairSlots[1] && !!pairSlots[1].quote?.trim() && (
           <div className="quote r" style={{
             color: pairSlots[1].quoteColor,
             ['--q-mark' as string]: pairSlots[1].quoteMarkColor,
@@ -923,7 +1008,7 @@ export default function RelDetailPage() {
                 onFaceCrop={ref => setFaceEdit({ charId: pairSlots[0]!.charId, ref, crop: pairSlots[0]!.faceCrop })}
                 onGo={() => router.push(charHref(pairSlots[0]!.charId))}
                 onRemove={() => removeMember(pairSlots[0]!.charId)} />
-            : <EmptyCard isAdmin={isAdmin} onAdd={() => setMemberOpen(true)} />}
+            : <EmptyCard isAdmin={tool} onAdd={() => setMemberOpen(true)} />}
           <div className={`rel-center ${single ? 'one-mode' : ''}`}
             style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--line-dark)' }}>
             {/* 전신 — 등록 이미지(AU별 우선) + 크기/앞뒤는 자관 수정의 미리보기에서 (v1.9) */}
@@ -952,8 +1037,14 @@ export default function RelDetailPage() {
               }}>
               {auArts.length > 0 ? (
                 <>
-                  {/* 잡아 둔 위치가 있으면 그대로 (v2.0) — 없으면 예전처럼 통째로 */}
-                  <CroppedBlobImg fileRef={auArts[Math.min(artIdx, auArts.length - 1)]} crop={rel.artCrops?.[curArt]} ph="" label="MAIN ILLUST" />
+                  {/* 잡아 둔 위치가 있으면 그대로 (v2.0) — 없으면 예전처럼 통째로.
+                      슬라이드는 전부 겹쳐 두고 투명도로만 바꾼다 (사용자 제보 — 넘길 때마다 자리표시자가
+                      먼저 뜨고 그림이 나중에 올라오던 것). 한 번 받은 그림은 그대로 남아 즉시 전환된다 */}
+                  {auArts.map((ref, i) => (
+                    <div key={ref} style={{ position: 'absolute', inset: 0, opacity: i === Math.min(artIdx, auArts.length - 1) ? 1 : 0, transition: 'opacity .25s' }}>
+                      <CroppedBlobImg fileRef={ref} crop={rel.artCrops?.[ref]} ph="" label="MAIN ILLUST" />
+                    </div>
+                  ))}
                   {auArts.length > 1 && (
                     <div style={{ position: 'absolute', left: 0, right: 0, bottom: 44, display: 'flex', justifyContent: 'center', gap: 5, zIndex: 3 }}>
                       {auArts.map((_, i) => (
@@ -985,7 +1076,7 @@ export default function RelDetailPage() {
                 onFaceCrop={ref => setFaceEdit({ charId: pairSlots[1]!.charId, ref, crop: pairSlots[1]!.faceCrop })}
                 onGo={() => router.push(charHref(pairSlots[1]!.charId))}
                 onRemove={() => removeMember(pairSlots[1]!.charId)} />
-            : <EmptyCard isAdmin={isAdmin} onAdd={() => setMemberOpen(true)} />}
+            : <EmptyCard isAdmin={tool} onAdd={() => setMemberOpen(true)} />}
         </div>
       ) : (
         /* 다인 자관 — 프로토타입 multi-body: 좌 멤버 리스트(430px) + 우 그룹 일러 */
@@ -998,21 +1089,21 @@ export default function RelDetailPage() {
               return (
                 <div key={m.charId} className="mrow" style={{ ['--cc' as string]: rgbTriple(c.color) }}
                   onClick={() => router.push(charHref(m.charId))}>
-                  <div className={`face ph ${c.thumbClass}`}>
+                  <div className={`face ph ${c.thumbClass}`} style={phStyle([c.color])}>
                     {!unreg && (c.arts?.[0] ?? c.thumbId) && (
-                      <CroppedBlobImg fileRef={c.arts?.[0] ?? c.thumbId} crop={c.thumbCrop} ph={c.thumbClass} />
+                      <CroppedBlobImg fileRef={c.arts?.[0] ?? c.thumbId} crop={relFaceCrop(rel, au?.id, c)} ph={c.thumbClass} phStyle={phStyle([c.color])} />
                     )}
                   </div>
                   <div className="nm">
                     {unreg ? (
                       /* AU 프로필 미등록 (v1.9) — 원본 프로필 대신 등록 안내 */
                       <>
-                        <b style={{ fontFamily: familyOf(findChar(chars, m.charId)?.fontId) }}>{findChar(chars, m.charId)?.name}</b>
+                        <b style={{ fontFamily: nameFont(findChar(chars, m.charId)?.fontId) }}>{findChar(chars, m.charId)?.name}</b>
                         <small>이 AU의 프로필 미등록 — 눌러서 등록</small>
                       </>
                     ) : (
                       <>
-                        <b style={{ fontFamily: familyOf(c.fontId) }}>{c.name}</b><i>{c.sub}</i>
+                        <b style={{ fontFamily: nameFont(c.fontId) }}>{c.name}</b><i>{c.sub}</i>
                         <small>{c.specs.slice(0, 3).map(s => s.value).join(' · ')}</small>
                         {(m.quote || noteOf(m) || m.keywords[0]) && (
                           <span className="ext">{m.quote || noteOf(m) || m.keywords[0]}</span>
@@ -1023,13 +1114,13 @@ export default function RelDetailPage() {
                   <div className="gem-mini">
                     {(c.colors ?? []).slice(0, 3).map(p => <i key={p.hex + p.label} style={{ background: p.hex }} />)}
                   </div>
-                  {isAdmin && (
+                  {tool && (
                     <span className="rm" onClick={e => { e.stopPropagation(); removeMember(m.charId); }}>제거</span>
                   )}
                 </div>
               );
             })}
-            {isAdmin && rel.members.length < 6 && (
+            {tool && rel.members.length < 6 && (
               <div className="mrow add" onClick={() => setMemberOpen(true)}>＋ ADD MEMBER (최대 6인)</div>
             )}
           </div>
@@ -1045,7 +1136,12 @@ export default function RelDetailPage() {
             }}>
             {auArts.length > 0 ? (
               <>
-                <CroppedBlobImg fileRef={auArts[Math.min(artIdx, auArts.length - 1)]} crop={rel.artCrops?.[curArt]} ph="" label="GROUP ILLUST" />
+                {/* 슬라이드 전부 겹쳐 두고 투명도로만 전환 — 위 MAIN ILLUST와 같은 이유 */}
+                {auArts.map((ref, i) => (
+                  <div key={ref} style={{ position: 'absolute', inset: 0, opacity: i === Math.min(artIdx, auArts.length - 1) ? 1 : 0, transition: 'opacity .25s' }}>
+                    <CroppedBlobImg fileRef={ref} crop={rel.artCrops?.[ref]} ph="" label="GROUP ILLUST" />
+                  </div>
+                ))}
                 {auArts.length > 1 && (
                   <div style={{ position: 'absolute', left: 0, right: 0, bottom: 14, display: 'flex', justifyContent: 'center', gap: 5, zIndex: 3 }}>
                     {auArts.map((_, i) => (
@@ -1067,12 +1163,12 @@ export default function RelDetailPage() {
           <button className={tab === 'tl' ? 'on' : ''} onClick={() => setTab('tl')}><span className="lb-pc">TIMELINE</span><span className="lb-m">T</span></button>
           {/* QUESTIONS 섹션은 ＋로 추가해야 생김 (v1.9) — 처음에는 타임라인만 */}
           {qaOn && <button className={tab === 'qa' ? 'on' : ''} onClick={() => setTab('qa')}><span className="lb-pc">QUESTIONS</span><span className="lb-m">Q</span></button>}
-          {isAdmin && !qaOn && (
+          {tool && !qaOn && (
             <button data-tip="QUESTIONS 섹션 추가" style={{ color: 'var(--faint)', fontSize: 14, padding: '0 6px' }}
               onClick={() => setQsetOpen(true)}>＋</button>
           )}
-          {isAdmin && (
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          {tool && (
+            <span className="rel-tab-acts">
               {/* 이 줄의 버튼은 홈 공통 버튼과 같은 세로 크기(35px)로 — 탭 줄에서만 작아 보이던 것 */}
               {tab === 'tl' && auTimeline.length > 1 && (
                 <button className={`btn ${tlSort ? 'btn-accent' : 'btn-ghost'}`}
@@ -1143,7 +1239,7 @@ export default function RelDetailPage() {
                   return (
                     <div key={j} className={`tl-say ${sideOf(s.charId)}`}
                       style={{ ['--cc' as string]: rgbTriple(c?.color ?? '#5d636d') }}>
-                      <div className="who" style={{ fontFamily: familyOf(c?.fontId) }}>{c?.name}</div>
+                      <div className="who" style={{ fontFamily: nameFont(c?.fontId) }}>{c?.name}</div>
                       <div className="bub">{s.text}</div>
                     </div>
                   );
@@ -1162,7 +1258,7 @@ export default function RelDetailPage() {
                   <div className="qa-answers" ref={ansRef} onScroll={onAnsScroll}>
                   <div className="qa-no">TODAY&apos;S QUESTION · Q.{String(curQa.no).padStart(3, '0')}
                     {/* 질문에 대한 오너 설명 — 관리자만 작성 (v2.0 사용자 요청) */}
-                    {isAdmin && (
+                    {tool && (
                       <small style={{ cursor: 'var(--cur-pointer,pointer)', color: 'var(--accent)', marginLeft: 8, fontWeight: 400, letterSpacing: 0 }}
                         onClick={() => setQNote({ no: curQa.no, text: curQa.note ?? '' })}>
                         {curQa.note ? '설명 수정' : '＋ 설명'}
@@ -1187,7 +1283,7 @@ export default function RelDetailPage() {
                         }}>
                         {/* 같은 캐릭터가 연달아 답하면 이름을 한 번만 (v2.0 사용자 요청) */}
                         {curAnswers[i - 1]?.charId !== a.charId && (
-                          <div className="who" style={{ fontFamily: familyOf(c?.fontId) }}>{c?.name}</div>
+                          <div className="who" style={{ fontFamily: nameFont(c?.fontId) }}>{c?.name}</div>
                         )}
                         <div className="bub" {...(a.note ? { 'data-note': a.note } : {})}>{a.text}</div>
                       </div>
@@ -1209,7 +1305,7 @@ export default function RelDetailPage() {
                         }
                       }}>
                         <CharFace c={charOf(qaChar ?? answerableIds[0])} className="f" />
-                        <small style={{ fontFamily: familyOf(charOf(qaChar ?? answerableIds[0])?.fontId) }}>
+                        <small style={{ fontFamily: nameFont(charOf(qaChar ?? answerableIds[0])?.fontId) }}>
                           {charOf(qaChar ?? answerableIds[0])?.name}{answerableIds.length > 1 ? ' ▾' : ''}
                         </small>
                         {qaPickPos && createPortal(
@@ -1220,7 +1316,7 @@ export default function RelDetailPage() {
                                 <div key={cid} style={{ display: 'flex', gap: 8, alignItems: 'center' }}
                                   onClick={e2 => { e2.stopPropagation(); setQaChar(cid); setQaPickPos(null); }}>
                                   <CharFace c={c} style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0 }} />
-                                  <span style={{ fontFamily: familyOf(c?.fontId) }}>{c?.name}</span>
+                                  <span style={{ fontFamily: nameFont(c?.fontId) }}>{c?.name}</span>
                                 </div>
                               );
                             })}
@@ -1255,7 +1351,7 @@ export default function RelDetailPage() {
                      바로 모달이 뜨는 것보다 한 단계 거치는 쪽이 실수로 우클릭했을 때 안전하다).
                      지금 보고 있는 질문이 아니어도 리스트에서 바로 고를 수 있다 */
                   <div key={q.no} className={`qa-item ${curQa?.no === q.no ? 'on' : ''}`} onClick={() => setQaNo(q.no)}
-                    data-tip={isAdmin ? '우클릭 — 리스트로 되돌리기' : undefined}
+                    data-tip={tool ? '우클릭 — 리스트로 되돌리기' : undefined}
                     onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); setQaCtx({ x: e.clientX, y: e.clientY, no: q.no }); }}>
                     <b>Q.{String(q.no).padStart(3, '0')} {q.q}</b>
                     <small>{q.date.slice(5).replace('-', '.')} · 답변 {answersOf(q.no).length}</small>
@@ -1288,9 +1384,9 @@ export default function RelDetailPage() {
         )}
         {!au?.hideLog && (
         <div className="panel widget" style={{ margin: 0, ...(au?.hideRp ? { gridColumn: '1/-1' } : null) }}>
-          <h4>로그 <span className="more" onClick={() => router.push('/trpg')}>더보기 ›</span></h4>
+          <h4>로그 <span className="more" onClick={() => router.push(`/log?rel=${rel.id}${auId !== 'base' ? `&au=${auId}` : ''}`)}>더보기 ›</span></h4>
           {relLogs.length > 0 ? relLogs.map(l => (
-            <div key={l.id} className="dday-row" style={{ cursor: 'var(--cur-pointer,pointer)' }} onClick={() => router.push(`/trpg/${l.id}`)}>
+            <div key={l.id} className="dday-row" style={{ cursor: 'var(--cur-pointer,pointer)' }} onClick={() => router.push(logPath(l))}>
               {/* 번호 없이 제목만 — 연동 리스트에서는 순번이 의미가 없다 (사용자 확정) */}
               <span>{l.title}</span>
               <b style={{ fontSize: 11, color: 'var(--faint)' }}>{l.date?.replace(/-/g, '.') ?? ''}</b>
@@ -1314,6 +1410,13 @@ export default function RelDetailPage() {
             <KRadio name="mm" value="exist" current={mMode} onChange={v => setMMode(v as 'exist')} label="기존 캐릭터" />
             <KRadio name="mm" value="new" current={mMode} onChange={v => setMMode(v as 'new')} label="새 상대 캐릭터" />
           </div>
+          {/* 커플홈 — 캐릭터 목록이 없으므로 프로필을 갖춘 캐릭터는 여기서 만들러 간다. 만들면 이 자관으로 돌아온다 */}
+          <p className="hint" style={{ margin: 0 }}>
+            프로필까지 갖춘 캐릭터는{' '}
+            <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'var(--cur-pointer,pointer)' }}
+              onClick={() => router.push(`/chars/new?next=${encodeURIComponent(relPath(rel))}`)}>캐릭터 만들기 ›</span>
+            에서 만든 뒤 「기존 캐릭터」로 연결하세요
+          </p>
           {mMode === 'exist' ? (
             <div>
               {/* 검색형 선택 — 인풋으로 거르고 아래 리스트에서 클릭 */}
@@ -1453,7 +1556,7 @@ export default function RelDetailPage() {
                     <span className="fx" style={{ flexShrink: 0 }}
                       onClick={() => del.ask(`AU 「${a.label}」를 삭제하시겠습니까?`, () => {
                         updateRel({ aus: rel.aus.filter(x => x.id !== a.id) });
-                        if (auId === a.id) setAuId('base');
+                        if (auId === a.id) selectAu('base');
                       }, '이 AU의 일러·타임라인·문답이 함께 삭제되며 복구할 수 없습니다.')}>✕</span>
                   </>
                 )}

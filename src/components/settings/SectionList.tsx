@@ -28,7 +28,8 @@ export function SectionsBlock() {
         <b> 서버 설정을 다시 할 필요는 없습니다</b> (내용은 원래 있던 곳에 그대로 쌓입니다)
       </div>
       <div className="mini-seg" style={{ flexWrap: 'wrap', marginBottom: 4 }}>
-        {SECTION_KINDS.map(k => {
+        {/* 캐릭터는 커플홈에서 목록 페이지가 없으므로 여러 개로 나눌 일도 없다 */}
+        {SECTION_KINDS.filter(k => k !== 'chars').map(k => {
           const n = list(k).length;
           return (
             <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>

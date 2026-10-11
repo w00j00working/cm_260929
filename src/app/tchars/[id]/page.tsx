@@ -24,7 +24,7 @@ function StandingImg({ imgId, ph }: { imgId?: string; ph: string }) {
 export default function TCharDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [tchars, setTchars, loaded] = useLocalList<TrpgChar>('ohome.tchars.v1', TCHAR_SEED);
   const [faceIdx, setFaceIdx] = useState(0);
   const [delAsk, setDelAsk] = useState(false);
@@ -48,8 +48,9 @@ export default function TCharDetailPage() {
         <PageTitle>TRPG CHARACTERS</PageTitle>
         <EditableDesc k="tchars-detail-desc" def="표정 썸네일을 누르면 이미지가 전환됩니다" />
         <div className="head-actions">
-          {isAdmin && <button className="btn btn-dark" onClick={() => router.push(`/tchars/${c.id}/edit`)}>EDIT</button>}
-          {isAdmin && <button className="btn btn-dark" onClick={() => setDelAsk(true)}>DELETE</button>}
+          {/* 수정·삭제는 등록한 본인과 관리자 (커플홈) */}
+          {(isAdmin || (!!user && c.authorId === user.id)) && <button className="btn btn-dark" onClick={() => router.push(`/tchars/${c.id}/edit`)}>EDIT</button>}
+          {(isAdmin || (!!user && c.authorId === user.id)) && <button className="btn btn-dark" onClick={() => setDelAsk(true)}>DELETE</button>}
         </div>
       </div>
 

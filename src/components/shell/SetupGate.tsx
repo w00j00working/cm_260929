@@ -1,6 +1,6 @@
 'use client';
 // 설치 초기 화면 (v2.0) — 배포본은 공개 홈 전용이라 서버 연결이 필수다.
-// Supabase / Firebase 중 하나를 고르고, 연결값 입력 → 규칙(스키마) 적용 → 연결 확인 →
+// Firebase 연결값 입력 → 규칙 적용 → 연결 확인 →
 // 관리자 계정 만들기 → 설정 파일(ohome.config.json) 내려받기 순서로 진행한다.
 // 백업 zip이 있으면 위 과정을 건너뛰고 바로 복원할 수 있다.
 import React, { useEffect, useState } from 'react';
@@ -11,20 +11,15 @@ import { fileDrop } from '@/lib/dnd';
 import {
   saveLocalConfig, configFileText, validateConfig, serverConfig, parseFirebaseSnippet,
 } from '@/lib/serverConfig';
-import type { BackendConfig, BackendKind } from '@/lib/backend/types';
+import type { BackendConfig } from '@/lib/backend/types';
 import { createBackend } from '@/lib/backend';
 import type { BackendCheck } from '@/lib/backend/types';
-import { SCHEMA_SQL } from '@/lib/schemaSql';
 import { FIRESTORE_RULES, STORAGE_RULES } from '@/lib/firebaseRules';
 
 export function SetupGate({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [need, setNeed] = useState(false);
-  const [kind, setKind] = useState<BackendKind | null>(null);
 
-  // Supabase 입력
-  const [sbUrl, setSbUrl] = useState('');
-  const [sbKey, setSbKey] = useState('');
   // Firebase 입력 — 콘솔에서 복사한 설정 뭉치를 붙여넣으면 자동으로 뜯어낸다
   const [fbPaste, setFbPaste] = useState('');
   const [fb, setFb] = useState({ apiKey: '', authDomain: '', projectId: '', storageBucket: '', appId: '', messagingSenderId: '' });
@@ -64,8 +59,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   if (!ready) return null;
   if (!need) return <>{children}</>;
 
-  const cfg = (): BackendConfig => (kind === 'firebase'
-    ? {
+  const cfg = (): BackendConfig => ({
         kind: 'firebase',
         apiKey: fb.apiKey.trim(),
         authDomain: fb.authDomain.trim() || `${fb.projectId.trim()}.firebaseapp.com`,
@@ -74,8 +68,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
         appId: fb.appId.trim(),
         messagingSenderId: fb.messagingSenderId.trim() || undefined,
         databaseId: fbDbId.trim() || undefined,
-      }
-    : { kind: 'supabase', url: sbUrl.trim(), anonKey: sbKey.trim() });
+      });
 
   // 저장소 CORS 열기 명령 — 입력한 버킷 이름을 그대로 넣어 준다 (백업에 이미지가 담기려면 필요)
   const corsCmd = [
@@ -157,7 +150,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
         };
       }
       if (!r.ok) { setErr(`계정 만들기에 실패했습니다 — ${r.error}`); setSigning(false); return; }
-      // Firebase는 첫 계정을 소유자로 등록해야 관리자가 된다 (Supabase는 트리거가 처리)
+      // Firebase는 첫 계정을 소유자로 등록해야 관리자가 된다 
       const claim = await be.claimOwner();
       if (!claim.ok) { setErr(`관리자 등록에 실패했습니다 — ${claim.error}`); setSigning(false); return; }
       setSigned(true);
@@ -170,9 +163,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   /** Vercel 환경변수로 등록할 때 붙여넣을 내용 */
   const envText = () => {
     const c = cfg();
-    return c.kind === 'supabase'
-      ? `NEXT_PUBLIC_SUPABASE_URL=${c.url}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${c.anonKey}`
-      : [
+    return [
           `NEXT_PUBLIC_FIREBASE_API_KEY=${c.apiKey}`,
           `NEXT_PUBLIC_FIREBASE_PROJECT_ID=${c.projectId}`,
           `NEXT_PUBLIC_FIREBASE_APP_ID=${c.appId}`,
@@ -211,70 +202,9 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
           「방문자에게도 보이게 하기」(ohome.config.json 올리기)를 아직 하지 않은 것입니다. 주인에게 알려 주세요.
         </p>
 
-        {/* ── 백엔드 선택 ───────────────────────────────────── */}
-        {!kind && (
-          <>
-            <button type="button" className="setup-pick" onClick={() => setKind('supabase')}>
-              <b>Supabase</b>
-              <small>Postgres 기반. 무료로 시작(저장 1GB) — 글이 많고 이미지는 적은 홈에 알맞습니다.</small>
-            </button>
-            <button type="button" className="setup-pick" onClick={() => setKind('firebase')}>
-              <b>Firebase</b>
-              <small>사용량 과금(고정비 없음). 이미지 저장 무료 한도가 5GB로 넉넉합니다 — 그림이 많은 홈에 알맞습니다.</small>
-            </button>
-          </>
-        )}
-
         {/* ── 연결 단계 ─────────────────────────────────────── */}
-        {kind && (
+        {(
           <ol className="setup-steps">
-            {kind === 'supabase' ? (
-              <>
-                <li>
-                  <b>Supabase 프로젝트 만들기</b>
-                  <small>
-                    <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer">supabase.com</a>에서
-                    <b> [New project]</b>를 누릅니다. 아래 두 가지만 신경 쓰면 됩니다.
-                  </small>
-                  <ul className="setup-picks">
-                    <li>
-                      <b>Region</b> — <b>Northeast Asia (Seoul)</b>
-                      <em className="warn">나중에 바꿀 수 없습니다.</em>
-                      <em>무료 요금제에서도 자유롭게 고를 수 있으니 가까운 서울이 가장 빠릅니다.</em>
-                    </li>
-                    <li>
-                      <b>Database Password</b> — 만든 뒤 <b>어딘가에 저장해 두세요</b>
-                      <em>다시 볼 수 없습니다. 홈을 쓰는 데는 필요 없지만, 나중에 데이터베이스에 직접 접속할 일이 생기면 이 값이 필요합니다.</em>
-                    </li>
-                  </ul>
-                  <small style={{ marginTop: 8 }}>
-                    만들어지는 데 1~2분 걸립니다. 끝나면 <b>Project Settings → API</b>로 갑니다.
-                  </small>
-                </li>
-                <li>
-                  <b>주소와 키 붙여넣기</b>
-                  <small>Project URL과 <b>anon public</b> 키입니다. service_role 키는 절대 넣지 마세요.</small>
-                  <label className="k-label">Project URL</label>
-                  <KInput value={sbUrl} onChange={e => setSbUrl(e.target.value)} placeholder="https://xxxx.supabase.co" />
-                  <label className="k-label">anon public key</label>
-                  <KInput value={sbKey} onChange={e => setSbKey(e.target.value)} />
-                </li>
-                <li>
-                  <b>스키마 한 번 실행</b>
-                  <small>SQL Editor에 붙여넣고 [Run]. 테이블·권한·이미지 저장소가 만들어집니다.</small>
-                  <div className="setup-row">
-                    <button className="btn btn-dark" onClick={() => copy(SCHEMA_SQL, 'sql')}>
-                      {copied === 'sql' ? '복사됨 ✓' : 'SQL 복사'}
-                    </button>
-                    <button className="btn btn-ghost" onClick={() => setRulesOpen(o => !o)}>
-                      {rulesOpen ? '내용 접기' : '내용 보기'}
-                    </button>
-                  </div>
-                  {rulesOpen && <pre className="setup-sql">{SCHEMA_SQL}</pre>}
-                </li>
-              </>
-            ) : (
-              <>
                 <li>
                   <b>Firebase 프로젝트 만들기</b>
                   <small>
@@ -378,8 +308,6 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
                     </>
                   )}
                 </li>
-              </>
-            )}
 
             <li>
               <b>연결 확인</b>
@@ -392,7 +320,7 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
             {check?.ok && !check.hasAdmin && !signed && (
               <li>
                 <b>관리자 계정 만들기</b>
-                <small>여기서 만드는 첫 계정이 이 홈의 관리자가 됩니다.</small>
+                <small>여기서 만드는 첫 계정이 총관리자가 됩니다 — 로그인하면 자관 리스트가 뜨고, 거기서 자관을 만들어 가입코드를 나눠 줍니다.</small>
                 <label className="k-label">이메일</label>
                 <KInput value={email} onChange={e => setEmail(e.target.value)} />
                 <div className="setup-2">
@@ -479,10 +407,6 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
         {err && <p className="setup-err">{err}</p>}
 
         {doneStep && <button className="btn btn-accent setup-go" onClick={start}>홈 시작하기</button>}
-        {kind && (
-          <button className="btn btn-ghost setup-back"
-            onClick={() => { setKind(null); setErr(''); setCheck(null); setRulesOpen(false); }}>← 다른 서비스 고르기</button>
-        )}
 
         <div className="setup-sep" />
         <label className="k-label">이미 백업이 있다면</label>

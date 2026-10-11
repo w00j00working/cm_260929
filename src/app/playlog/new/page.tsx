@@ -3,6 +3,7 @@
 import React, { Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { useMenuSettings, canWriteAt, writeKeyOf } from '@/lib/menuStore';
 import { useSectionParam, secStamp, secQuery , useSectionTitle } from '@/lib/sectionStore';
 import { useLocalList, newId } from '@/lib/postStore';
 import { PlayRecord, PLAYLOG_SEED } from '@/lib/galleryStore';
@@ -16,14 +17,17 @@ function PlaylogNewPageInner() {
   // 큰 글씨 — 추가 섹션이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
   const tt = useSectionTitle('playlog', sec.id, 'ADD RECORD');
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [records, setRecords] = useLocalList<PlayRecord>('ohome.playlog.v1', PLAYLOG_SEED);
+  // 등록 권한 (커플홈) — 환경설정 「권한」에서 (기본: 관리자) · ADD 버튼과 같은 판정으로 주소 직접 진입도 막는다
+  const [menuSet, , menuLoaded] = useMenuSettings();
 
-  if (!isAdmin) {
+  if (!menuLoaded) return <section className="page" />;
+  if (!user || !canWriteAt(menuSet, writeKeyOf('/playlog', sec.id), { loggedIn: true, isAdmin, id: user.id }, 'admin')) {
     return (
       <section className="page">
-        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>관리자 전용 페이지</p></div>
+        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>허용된 회원만 등록할 수 있습니다</p></div>
       </section>
     );
   }
@@ -34,7 +38,8 @@ function PlaylogNewPageInner() {
       <PlaylogForm initial={null} records={records}
         onCancel={() => router.push('/playlog' + secQuery('playlog', sec.id))}
         onSave={v => {
-          setRecords([...records, { id: newId(), ...v, ...secStamp(sec.id) }]);
+          // 등록한 사람을 남긴다 (커플홈) — 수정·삭제는 본인과 관리자
+          setRecords([...records, { id: newId(), ...v, ...secStamp(sec.id), authorId: user.id }]);
           toast('기록이 추가되었습니다');
           router.push('/playlog' + secQuery('playlog', sec.id));
         }} />

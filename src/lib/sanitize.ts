@@ -17,6 +17,8 @@ export function sanitizeHtml(html: string): string {
 
 /** MD/HTML 본문 → 렌더 가능한 안전한 HTML */
 export function renderBody(mode: PostMode, body: string): string {
-  const raw = mode === 'md' ? (marked.parse(body, { async: false }) as string) : body;
+  // breaks: 엔터 한 번이 그대로 줄바꿈 (커플홈 사용자 제보 — 「일기에 엔터가 통하지 않아」).
+  // 마크다운 원칙대로면 빈 줄을 둬야 문단이 나뉘는데, 일기·게시글을 쓰는 사람은 엔터 = 줄바꿈으로 기대한다
+  const raw = mode === 'md' ? (marked.parse(body, { async: false, breaks: true }) as string) : body;
   return sanitizeHtml(raw);
 }

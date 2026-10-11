@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { useMenuSettings, canWriteAt } from '@/lib/menuStore';
 import { useLocalList } from '@/lib/postStore';
 import { TrpgChar, TCHAR_SEED, faceCrop } from '@/lib/tcharStore';
 import { SearchBar } from '@/components/ui/Kit';
@@ -14,7 +15,11 @@ import { useCardSort, mergeOrder } from '@/lib/cardSort';
 
 export default function TCharsPage() {
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
+  // 등록 권한 (커플홈) — 환경설정 「권한」에서 (기본: 관리자) · 수정·삭제는 등록한 본인과 관리자
+  const [menuSet] = useMenuSettings();
+  const canAdd = canWriteAt(menuSet, '/tchars', { loggedIn: !!user, isAdmin, id: user?.id }, 'admin');
+  const canEdit = (c: TrpgChar) => isAdmin || (!!user && c.authorId === user.id);
   const { editOn } = useMainStore();
   const del = useConfirmDelete();
   const [tchars, setTchars, loaded] = useLocalList<TrpgChar>('ohome.tchars.v1', TCHAR_SEED);
@@ -39,7 +44,7 @@ export default function TCharsPage() {
         <EditableDesc k="tchars-desc" def="1:1 인장 카드 — 클릭하면 표정과 소개를 볼 수 있습니다" />
         <div className="head-actions">
           <SearchBar placeholder="이름·시나리오·룰·역할 검색" onSearch={setQ} />
-          {isAdmin && <button className="btn btn-dark" onClick={() => router.push('/tchars/new')}>＋ ADD</button>}
+          {canAdd && <button className="btn btn-dark" onClick={() => router.push('/tchars/new')}>＋ ADD</button>}
         </div>
       </div>
 
@@ -52,7 +57,7 @@ export default function TCharsPage() {
               onClick={() => { if (!editOn) router.push(`/tchars/${c.id}`); }}>
               <div className="main" style={{ cursor: 'var(--cur-pointer,pointer)' }}>
                 <CroppedBlobImg fileRef={face?.imgId} crop={faceCrop(c, face)} ph={face?.ph ?? c.ph} />
-                {isAdmin && (
+                {canEdit(c) && (
                   <div className="th-actions hv-actions">
                     <button onClick={e => { e.stopPropagation(); router.push(`/tchars/${c.id}/edit`); }}>EDIT</button>
                     <button className="del" onClick={e => {

@@ -4,6 +4,7 @@
 // 썸네일 크롭 위치를 한 번만 잡아 전 표정에 공유). 표정: 라벨 · ⠿ 순서 · 첫 장 = 대표
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth';
 import { useLocalList, newId } from '@/lib/postStore';
 import { TrpgChar, TrpgFace, TCHAR_SEED } from '@/lib/tcharStore';
 import { putBlob, getBlob, useBlobUrl } from '@/lib/blobStore';
@@ -68,6 +69,7 @@ function FaceCropModal({ f, initial, onClose, onApply }: {
 
 export function TCharForm({ editId }: { editId?: string }) {
   const router = useRouter();
+  const { user } = useAuth();
   const toast = useToast();
   const del = useConfirmDelete();
   const [tchars, setTchars, loaded] = useLocalList<TrpgChar>('ohome.tchars.v1', TCHAR_SEED);
@@ -170,7 +172,8 @@ export function TCharForm({ editId }: { editId?: string }) {
       setTchars(tchars.map(c => c.id === orig.id ? { ...c, ...patch } : c));
       toast('저장되었습니다');
     } else {
-      setTchars([{ id: newId(), ph: 'cool', ...patch }, ...tchars]);
+      // 등록한 사람을 남긴다 (커플홈) — 수정·삭제는 본인과 관리자
+      setTchars([{ id: newId(), ph: 'cool', authorId: user?.id, ...patch }, ...tchars]);
       toast('캐릭터가 등록되었습니다');
     }
     router.push('/tchars');

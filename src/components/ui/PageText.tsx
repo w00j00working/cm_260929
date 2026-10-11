@@ -14,8 +14,11 @@ const STORAGE_KEY = 'ohome.pagetext.v1';
 /** 페이지 상단 대제목 — 클릭하면 해당 메뉴의 초기 페이지로 이동 (기본: 경로 첫 세그먼트).
  *  메뉴 관리에서 페이지 타이틀을 지정했으면 그 값이 기본 텍스트를 대체 (5.2 v1.9) —
  *  키는 href prop(게시판 등) 또는 현재 경로가 기능 href와 정확히 일치할 때만 (하위 경로 무영향) */
-export function PageTitle({ children, href, style }: {
+export function PageTitle({ children, href, style, lookupHref }: {
   children: React.ReactNode; href?: string; style?: React.CSSProperties;
+  /** 타이틀만 이 주소의 메뉴 설정에서 찾는다 (커플홈 — 메모장처럼 페이지를 여러 개로 나눠도 큰 글씨는 하나로 고정할 때).
+   *  클릭 동작은 그대로(지금 페이지 다시 불러오기) */
+  lookupHref?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -42,11 +45,13 @@ export function PageTitle({ children, href, style }: {
      알려 주는 경우로, 여기서도 메뉴에 적은 이름까지 끌어온다 (v2.0 사용자 제보 — 「추가한
      게시판의 상세로 가면 원래 페이지 제목이 뜬다」) */
   const isExtra = (h: string) => /[?&][sb]=/.test(h);
-  const custom = href
-    ? pageTitleFor(ms, href) ?? (isExtra(href) ? menuLabelOf(ms, href) : null)
-    : full !== pathname
-      ? pageTitleFor(ms, full) ?? menuLabelOf(ms, full)
-      : pageTitleFor(ms, pathname);
+  const custom = lookupHref
+    ? pageTitleFor(ms, lookupHref)   // 고정 타이틀 — 추가 페이지의 이름은 끌어오지 않는다
+    : href
+      ? pageTitleFor(ms, href) ?? (isExtra(href) ? menuLabelOf(ms, href) : null)
+      : full !== pathname
+        ? pageTitleFor(ms, full) ?? menuLabelOf(ms, full)
+        : pageTitleFor(ms, pathname);
   // 지금 있는 페이지면 다시 불러오기 — 상단 메뉴 재클릭과 동일 동작 (v1.9 사용자 요청).
   // 추가 게시판·섹션의 목록(쿼리 포함 주소)에서도 같은 동작이 되게 full과도 비교한다 (v2.0)
   return (

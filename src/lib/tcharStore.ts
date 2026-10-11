@@ -25,6 +25,8 @@ export interface TrpgChar {
   stdW?: number; stdH?: number; // 스탠딩 기준 크기 (업로드 검증용)
   faces: TrpgFace[];         // 첫 번째가 대표 인장
   ph: string;
+  /** 등록한 회원 (커플홈 — 일반 회원도 등록할 수 있게 되면서) · 수정·삭제는 본인과 관리자 */
+  authorId?: string;
 }
 
 /** 표정의 썸네일 크롭 — 스탠딩이면 공유 크롭, 단일 인장이면 개별 크롭 */

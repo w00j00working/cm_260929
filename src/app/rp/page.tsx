@@ -1,26 +1,47 @@
 ﻿'use client';
 // 역극 (4.9) — 실시간 채팅형. 방 개설(자관 기반/자유) · 참여자에게만 존재 노출 ·
-// 캐릭터 선택 발화(테마색 말풍선) · 지문(/desc) · 메시지 수정/삭제 · 완결/공개 전환 · HTML 내보내기
+// 캐릭터 선택 발화(테마색 말풍선) · 지문(/desc) · 메시지 수정/삭제 · 완결/공개 전환 · 로그(txt/html 저장 · RP LOG 올리기)
 // ※ 실시간 송수신·입력 중 표시·참여자 전원 동의는 Supabase Realtime 연동 시 활성화 (현재 localStorage)
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useLocalList, newId } from '@/lib/postStore';
+import type { RpTyping } from '@/lib/rpStore';
 import {
   RpRoom, RpMessage, RP_SEED, hexRgb, rpLastDate, rpHasNew,
   RpMessageRow, RP_MSG_KEY, RP_MSG_SEED, messagesFor, rpMarkRead, rpMemberIds,
 } from '@/lib/rpStore';
-import { Character, CHAR_SEED, Relation, REL_SEED, charGrant, charWithAu } from '@/lib/charStore';
+import { Character, CHAR_SEED, Relation, REL_SEED, charGrant, charWithAu, pairSides, relFaceCrop } from '@/lib/charStore';
+import type { CropValue } from '@/components/ui/CropEditor';
+import { phStyle } from '@/lib/color';
 import { Modal, ConfirmModal, useConfirmDelete } from '@/components/ui/Modal';
 import { KInput, KTextarea, KSelect, KCheck } from '@/components/ui/Kit';
 import { CroppedBlobImg } from '@/components/ui/CropEditor';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 import { useToast } from '@/components/ui/Toast';
+import { RpLogModal } from '@/components/rp/RpLogModal';
+import { rpLogHtml, openLogWindow } from '@/lib/rpLog';
+import { isMsgSoundOn, setMsgSoundOn, MSG_SOUND_EVT } from '@/lib/msgSound';
+import { Lightbox } from '@/components/ui/Lightbox';
+import { putBlob, BlobImg } from '@/lib/blobStore';
 
 /** 캐릭터 얼굴 칩 (썸네일 or 데모 플레이스홀더) */
-function Face({ ch, className }: { ch?: Character; className: string }) {
+/** 알림음 종 픽토그램 (커플홈 사용자 요청 — 이모지 대신). 선은 currentColor: 켜짐은 테마색, 꺼짐은 회색에 빗금 */
+function BellIcon({ off }: { off: boolean }) {
   return (
-    <div className={`${className} ${!ch?.thumbId ? `ph ${ch?.thumbClass ?? ''}` : ''}`}>
-      {ch?.thumbId && <CroppedBlobImg fileRef={ch.thumbId} crop={ch.thumbCrop} />}
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2.1H4.4z" />
+      <path d="M10 20.2a2 2 0 0 0 4 0" />
+      {off && <line x1="4" y1="4" x2="20" y2="20" />}
+    </svg>
+  );
+}
+
+function Face({ ch, className, crop }: { ch?: Character; className: string; crop?: CropValue }) {
+  // 사진이 없으면 캐릭터 테마색 자리표시자 (커플홈 사용자 요청)
+  // crop: 자관에서 잡은 1:1 얼굴 위치 (v2.1 사용자 제보 — 없으면 캐릭터의 3:4 썸네일 크롭)
+  return (
+    <div className={`${className} ${!ch?.thumbId ? `ph ${ch?.thumbClass ?? ''}` : ''}`} style={!ch?.thumbId ? phStyle([ch?.color]) : undefined}>
+      {ch?.thumbId && <CroppedBlobImg fileRef={ch.thumbId} crop={crop ?? ch.thumbCrop} />}
     </div>
   );
 }
@@ -30,7 +51,7 @@ const fmtHM = (iso: string) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-import { useMembers } from '@/lib/members';
+import { useMembers, adminIdsOf } from '@/lib/members';
 import { pushNotif } from '@/lib/notifStore';
 
 export default function RpPage() {
@@ -45,7 +66,9 @@ export default function RpPage() {
   const msgsOf = (r: RpRoom) => messagesFor(msgRows, r.id, r.messages);
   // 참여 회원 — 기반 자관이 있으면 그 자관 캐릭터의 권한자에서 자동으로 (v2.0 사용자 확정).
   // 계산해서 쓰므로 권한이 다른 사람에게 넘어가면 그 자관 기반 역극 전체에 바로 반영된다
-  const memberIdsOf = (r: RpRoom) => rpMemberIds(r, rels, chars);
+  const pool = useMembers();
+  const adminIds = adminIdsOf(pool);   // 자관 기반 방은 운영자 자캐가 있으면 관리자도 당사자 (커플홈)
+  const memberIdsOf = (r: RpRoom) => rpMemberIds(r, rels, chars, adminIds);
   const [chars] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
   const [selId, setSelId] = useState<string | null>(null);
@@ -59,7 +82,7 @@ export default function RpPage() {
     ? rooms.filter(r => memberIdsOf(r).includes(user.id))
       .sort((a, b) => rpLastDate(b, messagesFor(msgRows, b.id, b.messages))
         .localeCompare(rpLastDate(a, messagesFor(msgRows, a.id, a.messages))))
-    : []), [rooms, user, msgRows, rels, chars]);
+    : []), [rooms, user, msgRows, rels, chars, adminIds]);   // eslint-disable-line react-hooks/exhaustive-deps
   const myRooms = useMemo(() => allMine.filter(r => fStatus === 'all' || r.status === fStatus), [allMine, fStatus]);
   const sel = myRooms.find(r => r.id === selId) ?? myRooms[0];
   const cntS = (s: 'all' | 'ongoing' | 'done') =>
@@ -68,6 +91,8 @@ export default function RpPage() {
   // 발화자 선택 — 관리자는 기반 자관 멤버 전부(+자유 개설이면 자캐 전부),
   // 회원은 권한(grants — 역극 플레이/편집)이 부여된 캐릭터만 (3차 회원-캐릭터 연결, v1.9)
   const rel = rels.find(r => r.id === sel?.relId);
+  // 자관에서 잡은 1:1 얼굴 위치 — 로그 모달(프로필 사진 옵션)에도 같은 값을 넘긴다
+  const faceOf = (c?: Character) => (c ? relFaceCrop(rel, sel?.auId, c) : undefined);
   /* 이 방이 어느 AU로 노는지 (v2.0 사용자 요청) — 방 안에서 쓰는 캐릭터를 통째로
      그 AU 프로필로 갈아 끼운다. 발화자 선택·말풍선·방 소제목이 모두 이 목록을 보므로
      한 곳만 바꾸면 전부 따라온다. AU가 없으면 원래 목록 그대로다(참조도 같다).
@@ -82,8 +107,11 @@ export default function RpPage() {
   );
   const speakChars = useMemo(() => {
     if (rel) {
-      const members = rel.members.map(m => rpChars.find(c => c.id === m.charId)).filter(Boolean) as Character[];
-      return isAdmin ? members : members.filter(c => !!charGrant(c, user?.id));
+      // 발화자 목록도 자관에 보이는 순서(왼쪽 먼저)로 — 처음 고른 발화자가 왼쪽 캐릭터가 된다
+      const ids = pairSides(rel) ?? rel.members.map(m => m.charId);
+      const members = ids.map(id => rpChars.find(c => c.id === id)).filter(Boolean) as Character[];
+      // 관리자도 자캐만 (사용자 확정 — 상대 캐릭터까지 목록에 뜨는 게 싫다). 상대 오너는 권한 받은 캐릭터만
+      return isAdmin ? members.filter(c => c.own) : members.filter(c => !!charGrant(c, user?.id));
     }
     return isAdmin ? rpChars.filter(c => c.own) : rpChars.filter(c => !!charGrant(c, user?.id));
   }, [rel, rpChars, isAdmin, user?.id]);
@@ -108,24 +136,125 @@ export default function RpPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [sel?.id, msgRows.length]);
 
+  /* 긴 방은 잘라서 보여 준다 (커플홈 사용자 요청 — 한 방이 너무 길어지면 렉). 글자 수 기준으로 최근 것부터
+     WINDOW_CHARS만큼(적어도 WINDOW_MIN개), 맨 위로 올리거나 「이전 대화 더보기」를 누르면 그만큼 더 보여 준다.
+     전체는 LOG → 전체보기(새 탭) */
+  const WINDOW_CHARS = 6000, WINDOW_MIN = 30;
+  const [moreChars, setMoreChars] = useState(0);
+  useEffect(() => { setMoreChars(0); }, [sel?.id]);
+  const allMsgs = sel ? msgsOf(sel) : [];
+  let visStart = allMsgs.length;
+  {
+    const budget = WINDOW_CHARS + moreChars;
+    let used = 0;
+    while (visStart > 0) {
+      used += (allMsgs[visStart - 1].text?.length ?? 0) + 24;
+      if (used > budget && allMsgs.length - (visStart - 1) > WINDOW_MIN) break;
+      visStart -= 1;
+    }
+  }
+  const visibleMsgs = allMsgs.slice(visStart);
+  const hiddenCount = visStart;
+  const keepScroll = useRef<number | null>(null);   // 더보기 전 scrollHeight — 끼워 넣은 만큼 내려 읽던 자리를 지킨다
+  const loadMore = () => {
+    const el = msgsRef.current;
+    if (el) keepScroll.current = el.scrollHeight;
+    setMoreChars(x => x + WINDOW_CHARS);
+  };
+  useLayoutEffect(() => {
+    const el = msgsRef.current;
+    if (el && keepScroll.current != null) { el.scrollTop += el.scrollHeight - keepScroll.current; keepScroll.current = null; }
+  }, [visStart]);
+  const onMsgsScroll = () => {
+    const el = msgsRef.current;
+    if (el && hiddenCount > 0 && el.scrollTop < 30 && keepScroll.current == null) loadMore();
+  };
+  // 메신저 모양에서 오른쪽(파란 말풍선)에 둘 캐릭터 — 보는 사람 기준 (내 권한 캐릭터, 관리자는 자캐)
+  const rightIds = user ? rpChars.filter(c => !!charGrant(c, user.id) || (!!c.own && isAdmin)).map(c => c.id) : [];
+  /* SHOW ALL (커플홈 사용자 요청) — 참여자 누구나, 관리자가 아니어도·모바일(머리줄 숨김)에서도 대화 전부를 새 탭 한 장으로.
+     방의 모양(대본/메신저) 그대로, 사진 없이 */
+  const showAll = () => {
+    if (!sel) return;
+    const style = sel.style === 'imsg' ? 'imsg' : 'script';
+    openLogWindow(sel.title, rpLogHtml({ title: sel.title, sub: roomLabel(sel) }, allMsgs, rpChars, { time: false, style, rightIds }));
+  };
+
   const [text, setText] = useState('');
-  const send = () => {
+
+  /* 상대가 입력 중 (v2.1 사용자 요청) — 「캐릭터이름 is typing...」을 입력창 위에.
+     입력하는 동안 3초마다 rp_typing에 내 표시(방·사람당 문서 하나)를 남기고, 보내거나 5초 쉬면 지운다.
+     받는 쪽은 8초 안의 표시만 보여 준다. 다른 사람 문서는 절대 건드리지 않는다(규칙도 막는다) */
+  const [typingRows, setTypingRows, typingLoaded] = useLocalList<RpTyping>('ohome.rptyping.v1', []);
+  const typingRef = useRef<RpTyping[]>(typingRows);
+  typingRef.current = typingRows;
+  const typingAt = useRef(0);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const myTypingId = sel && user ? `${sel.id}:${user.id}` : null;
+  const stopTyping = () => {
+    typingAt.current = 0;
+    if (typingTimer.current) { clearTimeout(typingTimer.current); typingTimer.current = null; }
+    if (myTypingId && typingRef.current.some(t => t.id === myTypingId)) {
+      setTypingRows(typingRef.current.filter(t => t.id !== myTypingId));
+    }
+  };
+  const noteTyping = (v: string) => {
+    if (!sel || !user || !myTypingId) return;
+    if (!v.trim()) { stopTyping(); return; }
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(stopTyping, 5000);
+    const t = Date.now();
+    if (t - typingAt.current < 3000) return;
+    typingAt.current = t;
+    const name = speaker === 'desc' ? user.nickname : (rpChars.find(c => c.id === speaker)?.name ?? user.nickname);
+    const row: RpTyping = { id: myTypingId, roomId: sel.id, authorId: user.id, name, at: t, visibility: 'member' };
+    setTypingRows([...typingRef.current.filter(x => x.id !== myTypingId), row]);
+  };
+  // 방을 나가거나 바꾸면 내 표시를 지운다
+  useEffect(() => () => { stopTyping(); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 지난 접속에서 남은 내 표시(탭을 그냥 닫은 경우)는 처음 받았을 때 한 번 치운다
+  const typingCleaned = useRef(false);
+  useEffect(() => {
+    if (typingCleaned.current || !typingLoaded || !user) return;
+    typingCleaned.current = true;
+    if (typingRows.some(t => t.authorId === user.id)) setTypingRows(typingRows.filter(t => t.authorId !== user.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typingLoaded, user?.id]);
+  const othersTyping = sel && user
+    ? typingRows.filter(t => t.roomId === sel.id && t.authorId !== user.id && now - t.at < 8000)
+    : [];
+
+  const [plainRp, setPlainRp] = useState(false);   // 메신저 방에서 「일반 RP」로 보내기 (커플홈 사용자 요청) — 원래 역극 모양
+  const [pendingImg, setPendingImg] = useState<{ file: File; url: string } | null>(null);   // 보낼 사진 (메신저 방, 커플홈)
+  const [lbImg, setLbImg] = useState<string | null>(null);   // 사진 크게 보기
+  const send = async () => {
     if (!sel || !user) return;
     let t = text.trim();
-    if (!t) return;
     let kind: RpMessage['kind'] = speaker === 'desc' ? 'desc' : 'char';
     if (t.startsWith('/desc ')) { kind = 'desc'; t = t.slice(6).trim(); } // /desc 명령 (v1.8)
-    if (!t) return;
-    const m: RpMessage = {
-      id: newId(), kind, charId: kind === 'char' ? speaker : undefined,
+    // 사진만 보내는 문자도 된다 (커플홈 — 메신저 방의 사진 메시지). 지문에는 사진이 안 붙는다
+    const img = imsg && kind === 'char' ? pendingImg : null;
+    if (!t && !img) return;
+    stopTyping();   // 보냈으니 「입력 중」 표시는 내린다
+    const imgId = img ? await putBlob(img.file) : undefined;
+    const base = {
+      kind, charId: kind === 'char' ? speaker : undefined,
       // 발화 당시 소유 기록 — 캐릭터가 삭제돼도 재연동 시 어느 리스트에서 고를지 판별 (v1.9)
       charOwn: kind === 'char' ? rpChars.find(c => c.id === speaker)?.own : undefined,
-      authorId: user.id, text: t, date: new Date().toISOString(),
+      authorId: user.id,
+      ...(imsg && plainRp ? { rp: true } : {}),   // 메신저 방의 「일반 RP」 — 원래 역극 모양으로 (커플홈)
     };
+    // 사진과 글을 같이 보내면 **따로 두 개**로 (사용자 확정 — 한 글에 사진+말풍선이 붙는 모양이 별로였다): 사진 먼저, 글 다음
+    const now = Date.now();
+    const out: RpMessage[] = [];
+    if (imgId) out.push({ ...base, id: newId(), text: '', date: new Date(now).toISOString(), imgId });
+    if (t) out.push({ ...base, id: newId(), text: t, date: new Date(now + (imgId ? 1 : 0)).toISOString() });
     // 방은 건드리지 않는다 — 발화만 자기 행으로 (v2.0)
-    setMsgRows([...msgRows, { ...m, roomId: sel.id }]);
-    rpMarkRead(sel.id, user.id, m.date);
+    setMsgRows([...msgRows, ...out.map(m => ({ ...m, roomId: sel.id }))]);
+    rpMarkRead(sel.id, user.id, out[out.length - 1].date);
     setText('');
+    if (img) { URL.revokeObjectURL(img.url); setPendingImg(null); }
     // 알림 (4.13) — 나를 제외한 참여자에게, 방 단위로 묶어서 (디스코드 DM은 봇 연동 시)
     memberIdsOf(sel).filter(id => id !== user.id).forEach(id =>
       pushNotif({
@@ -162,15 +291,16 @@ export default function RpPage() {
   // 방 개설 모달
   const [newOpen, setNewOpen] = useState(false);
   const [nTitle, setNTitle] = useState('');
+  const [nStyle, setNStyle] = useState<'script' | 'imsg'>('script');   // 표시 방식 — 기본 / 메신저(아이폰 문자)
+  const [renameText, setRenameText] = useState<string | null>(null);   // 역극명 바꾸기 창 (커플홈 사용자 요청) — null이면 닫힘
   const [nRel, setNRel] = useState('none');
   const [nAu, setNAu] = useState('base');   // 고른 자관의 AU (v2.0 사용자 요청)
   const [nMembers, setNMembers] = useState<string[]>([]);
-  const pool = useMembers();
   // 개설 모달에서 보여 줄 자동 참여자 (개설자 제외) — 권한자를 이름으로 (v2.0)
   const newRelGrantNames = (() => {
     if (nRel === 'none') return [] as string[];
     const ids = rpMemberIds(
-      { relId: nRel, createdBy: user?.id ?? '', memberIds: [] } as unknown as RpRoom, rels, chars);
+      { relId: nRel, createdBy: user?.id ?? '', memberIds: [] } as unknown as RpRoom, rels, chars, adminIds);
     return ids.filter(id => id !== user?.id)
       .map(id => pool.find(pp => pp.id === id)?.nickname ?? id);
   })();
@@ -186,14 +316,16 @@ export default function RpPage() {
       auId: nRel !== 'none' && nAu !== 'base' ? nAu : undefined,
       memberIds: members, status: 'ongoing', isPublic: false,
       createdBy: user.id, created: new Date().toISOString(), lastRead: {}, messages: [],
+      ...(nStyle === 'imsg' ? { style: 'imsg' as const } : {}),   // 메신저 모양 (커플홈) — 기본이면 남기지 않는다
     };
     setRooms([room, ...rooms]);
     setSelId(room.id);
     setNewOpen(false);
-    setNTitle(''); setNRel('none'); setNMembers([]);
+    setNTitle(''); setNRel('none'); setNMembers([]); setNStyle('script');
   };
 
   const canManage = sel && user && (sel.createdBy === user.id || isAdmin);
+  const imsg = sel?.style === 'imsg';   // 메신저(아이폰 문자) 모양 (커플홈 사용자 요청)
   const [endAsk, setEndAsk] = useState(false); // 완결 확인 — 삭제가 아니므로 전용 모달
 
   // 연결이 해제된(삭제된) 캐릭터 — 발화가 남아 있으면 다른 캐릭터로 재연동 (v1.9)
@@ -253,29 +385,17 @@ export default function RpPage() {
     }, `대화 ${count}개도 함께 삭제됩니다.`);
   };
 
-  // 완결 로그 HTML 내보내기 (4.9 — TRPG 백업에 붙일 수 있는 형태)
-  const exportHtml = () => {
-    if (!sel) return;
-    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
-    const rows = msgsOf(sel).map(m => {
-      if (m.kind === 'desc') {
-        return `<p style="text-align:center;color:#4a505a;line-height:1.8;margin:14px 0">${esc(m.text)}</p>`;
-      }
-      const ch = rpChars.find(c => c.id === m.charId);
-      const name = ch?.name ?? '';
-      const color = ch?.color ?? '#5d636d';
-      return `<div style="margin:10px 0;line-height:1.7"><b style="color:${color};letter-spacing:.05em">${esc(name)}</b> — ${esc(m.text)}</div>`;
-    }).join('\n');
-    const html = `<div style="font-family:sans-serif;max-width:720px;margin:0 auto">
-<h2 style="letter-spacing:.08em">${esc(sel.title)}</h2>
-${rows}
-</div>`;
-    const u = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    const a = document.createElement('a');
-    a.href = u; a.download = `${sel.title}.html`;
-    a.click();
-    URL.revokeObjectURL(u);
-  };
+  // 로그 (커플홈) — txt/html 저장 · RP LOG에 올리기. 예전의 HTML 내보내기(EXPORT)를 대신한다
+  const [logOpen, setLogOpen] = useState(false);
+  // 알림음 켬/끔 (커플홈) — 브라우저마다. 처음 그릴 때는 서버와 같은 값(켬)으로 두고 마운트 뒤 읽는다
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => {
+    const f = () => setSoundOn(isMsgSoundOn());   // 종 메뉴(상단 바)에서 바꿔도 같이 바뀐다
+    f();
+    window.addEventListener(MSG_SOUND_EVT, f);
+    return () => window.removeEventListener(MSG_SOUND_EVT, f);
+  }, []);
+  useEffect(() => { setLogOpen(false); }, [sel?.id]);
 
   if (!loaded) return <section className="page" />;
 
@@ -294,8 +414,10 @@ ${rows}
   const relCharNames = (relId?: string) => {
     const rel = rels.find(r => r.id === relId);
     if (!rel) return [];
-    return rel.members
-      .map(m => rpChars.find(c => c.id === m.charId)?.name)
+    // 자관 페이지에 보이는 순서대로 — 왼쪽 캐릭터 먼저 (사용자 제보: 내 캐릭터가 먼저 떴다). pairSides가 좌우 바꾸기까지 반영한다
+    const ids = pairSides(rel) ?? rel.members.map(m => m.charId);
+    return ids
+      .map(id => rpChars.find(c => c.id === id)?.name)
       .filter(Boolean) as string[];
   };
   /** 방 소제목 (v2.0 사용자 확정) — 페어면 캐릭터 이름 둘만, 다인관이면 자관명만.
@@ -326,15 +448,25 @@ ${rows}
       <div className={`rp-layout ${mListOpen ? 'mopen' : ''}`}>
         {/* 모바일 전용 접힘 바 — 탭하면 방 목록·상태 필터가 펼쳐짐 (v1.9) */}
         <button type="button" className="rp-mfold" onClick={() => setMListOpen(o => !o)}>
-          <b>{sel ? sel.title : '방 목록'}</b>
+          {/* 모바일에선 채팅 머리(제목·캐릭터명·버튼들)를 숨기므로 여기에 캐릭터 이름까지 (사용자 확정) */}
+          <b>{sel ? sel.title : '방 목록'}{sel && <span className="rl"> · {roomLabel(sel)}</span>}</b>
           <small>MY ROOMS {myRooms.length} {mListOpen ? '▴' : '▾'}</small>
         </button>
         {/* 방 목록 — 내 참여 방만 · 헤더 고정, 리스트만 내부 스크롤 */}
         <div className="panel rp-rooms">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px 12px', flexShrink: 0 }}>
             <b style={{ fontSize: 12, letterSpacing: '.1em', color: 'var(--sub)' }}>MY ROOMS</b>
-            <button className="btn btn-dark" style={{ padding: '0 12px', height: 30, fontSize: 11 }}
-              onClick={() => setNewOpen(true)}>＋ NEW ROOM</button>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {/* 메시지 알림음 (커플홈) — 남의 새 발화가 오면 짧게 울린다. 브라우저마다 켜고 끈다 */}
+              <button className={`btn btn-ghost rp-bell${soundOn ? '' : ' off'}`} data-tip={soundOn ? '알림음 끄기' : '알림음 켜기'}
+                onClick={() => { setMsgSoundOn(!soundOn); setSoundOn(!soundOn); }}><BellIcon off={!soundOn} /></button>
+              <button className="btn btn-dark" style={{ padding: '0 12px', height: 30, fontSize: 11 }}
+                onClick={() => {
+                  // 커플홈 — 기반 자관은 대표 자관(첫 번째)부터 골라 둔다. 자유 개설은 셀렉트에서
+                  setNRel(rels[0]?.id ?? 'none'); setNAu('base');
+                  setNewOpen(true);
+                }}>＋ NEW ROOM</button>
+            </div>
           </div>
           <div className="rp-rooms-list">
             {myRooms.map(r => (
@@ -363,6 +495,12 @@ ${rows}
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span className="pill">{sel.status === 'done' ? (sel.isPublic ? '완결 · 공개' : '완결') : '진행중'}</span>
+                  {/* 표시 방식은 개설할 때 정한 그대로 (사용자 확정 — 되돌리는 버튼은 없다). 글마다 「RP」 토글로 원래 모양을 섞는다 */}
+                  {/* 역극명 바꾸기 (커플홈 사용자 요청) */}
+                  {canManage && (
+                    <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
+                      onClick={() => setRenameText(sel.title)}>RENAME</button>
+                  )}
                   {/* 삭제된 캐릭터가 남아 있으면 재연동 (v1.9) */}
                   {canManage && brokenChars.length > 0 && (
                     <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5, color: 'var(--accent)' }}
@@ -382,9 +520,18 @@ ${rows}
                         onClick={() => patchRoom({ isPublic: !sel.isPublic })}>
                         {sel.isPublic ? 'UNPUBLISH' : 'PUBLISH'}
                       </button>
-                      <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
-                        onClick={exportHtml}>EXPORT</button>
                     </>
+                  )}
+                  {/* 로그 — 참여자 누구나, 진행 중에도 (중간 백업용). 게시판 올리기는 모달 안에서 관리자만 */}
+                  {msgsOf(sel).length > 0 && (
+                    <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
+                      onClick={() => setLogOpen(true)}>LOG</button>
+                  )}
+                  {/* SHOW ALL — 참여자(관리자 아님)에게만, 관리자 버튼들이 뜨는 이 자리에 (커플홈 사용자 확정).
+                      대화 전부를 새 탭 한 장으로. 관리자는 LOG 창의 전체보기로 */}
+                  {!isAdmin && msgsOf(sel).length > 0 && (
+                    <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
+                      onClick={showAll}>SHOW ALL</button>
                   )}
                   {canManage && (
                     <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
@@ -393,21 +540,37 @@ ${rows}
                 </div>
               </div>
 
-              <div className="rp-msgs" ref={msgsRef}>
-                {msgsOf(sel).map(m => {
+              {/* 메시지 영역을 감싸는 틀 — 「입력 중」 줄을 이 안에 겹쳐 띄워 영역 높이가 안 바뀌게 (스크롤 덜컹 방지) */}
+              <div className="rp-msgs-wrap">
+              <div className={`rp-msgs${imsg ? ' imsg' : ''}`} ref={msgsRef} onScroll={onMsgsScroll}>
+                {/* 잘라 둔 이전 대화 더보기 (커플홈) — SHOW ALL은 머리줄의 관리 버튼 자리에 (사용자 확정) */}
+                {hiddenCount > 0 && (
+                  <div className="rp-topbtns">
+                    <button className="btn btn-ghost rp-more" onClick={loadMore}>이전 대화 더보기 ({hiddenCount})</button>
+                  </div>
+                )}
+                {visibleMsgs.map((m, mi, arr) => {
                   const mine = m.authorId === user.id;
+                  const acts = mine && (
+                    <span className="m-act">
+                      <button onClick={() => { setEditMsg(m); setEditText(m.text); }}>EDIT</button>
+                      <button onClick={() => removeMsg(m)}>DEL</button>
+                    </span>
+                  );
                   if (m.kind === 'desc') {
-                    return (
-                      <div key={m.id} className="msg-desc">
-                        {m.text}
-                        {mine && (
-                          <span className="m-act">
-                            <button onClick={() => { setEditMsg(m); setEditText(m.text); }}>EDIT</button>
-                            <button onClick={() => removeMsg(m)}>DEL</button>
-                          </span>
-                        )}
-                      </div>
-                    );
+                    // 메신저 모양에서는 지문이 아이폰 문자의 가운데 안내 글씨처럼.
+                    // 「2008.07.03」처럼 날짜로 시작하는 지문은 날짜 줄로 (사용자 요청 — 시각은 손으로 적는다).
+                    // 「일반 RP」 토글을 켜고 보낸 지문도 똑같이 — 예전엔 그것만 대본 모양 지문으로 그려져 날짜 줄이
+                    // 두 가지 스타일로 보였다 (커플홈 사용자 제보: "지문 스타일이 달라졌는데 … 하나로 통일해줘"). 로그 HTML과 같은 규칙
+                    if (imsg) {
+                      const dm = m.text.trim().match(/^(\d{4}\s?[.\-/]\s?\d{1,2}\s?[.\-/]\s?\d{1,2}\.?)([\s\S]*)$/);
+                      return (
+                        <div key={m.id} className={`im-sys${dm ? ' im-date' : ''}`}>
+                          {dm ? <><b>{dm[1]}</b>{dm[2]}</> : m.text}{acts}
+                        </div>
+                      );
+                    }
+                    return <div key={m.id} className="msg-desc">{m.text}{acts}</div>;
                   }
                   const ch = rpChars.find(c => c.id === m.charId);
                   const name = ch?.name ?? '';
@@ -418,20 +581,62 @@ ${rows}
                   const rightSide = ch
                     ? (!!charGrant(ch, user.id) || (!!ch.own && isAdmin))
                     : (!!m.charOwn && isAdmin);
+                  // 메신저 방의 이름 — 말하는 캐릭터가 바뀔 때만 (사용자 확정): 같은 캐릭터가 이어 말하면 생략,
+                  // 상대 글 바로 다음에 내가 일반 RP를 쓰는 식으로 바뀌면 적는다. 기본 방은 늘 적는다
+                  const prevMsg = arr[mi - 1];
+                  const nameNeeded = !imsg || !prevMsg || prevMsg.kind !== 'char' || prevMsg.charId !== m.charId;
+                  // 얼굴은 같은 캐릭터가 이어 말한 묶음의 **맨 끝**에 하나만 (아이폰 문자처럼) — 문자·일반 RP가 섞여도 한 번
+                  const nextMsg = arr[mi + 1];
+                  const runEnd = !nextMsg || nextMsg.kind !== 'char' || nextMsg.charId !== m.charId;
+                  if (imsg && !m.rp) {
+                    /* 아이폰 문자(iMessage) 모양 (커플홈 사용자 요청) — 내 쪽은 파란 말풍선, 상대는 회색.
+                       같은 캐릭터가 이어 말하면 묶어서 꼬리·얼굴은 묶음의 마지막에만, 30분 넘게 비면 가운데 시각 */
+                    const GAP = 30 * 60 * 1000;
+                    const prev = arr[mi - 1], next = arr[mi + 1];
+                    const gap = !prev || Date.parse(m.date) - Date.parse(prev.date) > GAP;
+                    // 「일반 RP」로 보낸 글은 묶음에 끼지 않는다
+                    const first = gap || prev.kind !== 'char' || prev.charId !== m.charId || !!prev.rp;
+                    const last = !next || next.kind !== 'char' || next.charId !== m.charId || !!next.rp || Date.parse(next.date) - Date.parse(m.date) > GAP;
+                    return (
+                      <React.Fragment key={m.id}>
+                        {/* 시각 줄은 두지 않는다 (사용자 확정 — 만들어진 역극이라 실제 시간은 의미가 없다). 묶음만 가른다 */}
+                        <div className={`im-msg ${rightSide ? 'me' : 'them'}${first ? ' first' : ''}${last ? ' last' : ''}`}
+                          style={{ ['--cc' as string]: hexRgb(ch?.color) }}>
+                          {!rightSide && <span className="im-face">{runEnd && <Face ch={ch} className="f" crop={ch && relFaceCrop(rel, sel?.auId, ch)} />}</span>}
+                          <div className="im-col">
+                            {!rightSide && nameNeeded && <div className="im-who">{name}</div>}
+                            {/* 사진은 아이폰 문자처럼 말풍선 없이 둥근 사진만 (사용자 확정) — 글이 같이 있으면 그 아래 글 말풍선 */}
+                            {m.imgId && (
+                              <div className="im-pic" onClick={() => setLbImg(m.imgId!)}><BlobImg fileRef={m.imgId} ph="" label="" /></div>
+                            )}
+                            {/* 한두 글자짜리는 말풍선이 찌그러져 보여 최소 폭을 둔다 */}
+                            {(m.text || !m.imgId) && (
+                              <div className={`im-bub${m.text.trim().length <= 3 ? ' short' : ''}`}>{m.text}</div>
+                            )}
+                          </div>
+                          {acts}
+                        </div>
+                      </React.Fragment>
+                    );
+                  }
                   return (
                     <div key={m.id} className={`msg ${rightSide ? 'me' : ''}`} style={{ ['--cc' as string]: hexRgb(ch?.color) }}>
-                      <Face ch={ch} className="face" />
+                      {/* 메신저 방의 일반 RP: 내 글은 얼굴 없이(내 말풍선처럼 오른쪽 끝 맞춤), 상대 글은 묶음 끝에만 얼굴 —
+                          이어지는 글은 빈자리만 두어 말풍선 출발선이 문자 말풍선과 같게 (사용자 확정) */}
+                      {!imsg
+                        ? <Face ch={ch} className="face" crop={ch && relFaceCrop(rel, sel?.auId, ch)} />
+                        : !rightSide && (runEnd ? <Face ch={ch} className="face" crop={ch && relFaceCrop(rel, sel?.auId, ch)} /> : <span className="face spacer" />)}
                       <div>
-                        <div className="who">{name}</div>
-                        <div className="bub">{m.text}</div>
-                        <div style={{ fontSize: 9, color: 'var(--faint)', marginTop: 3 }}>{fmtHM(m.date)}</div>
+                        {/* 메신저 방의 일반 RP 글은 말하는 캐릭터가 바뀔 때만 이름 (사용자 확정) */}
+                        {nameNeeded && <div className="who">{name}</div>}
+                        <div className="bub">
+                          {m.imgId && <div className="rp-pic" onClick={() => setLbImg(m.imgId!)}><BlobImg fileRef={m.imgId} ph="" label="" /></div>}
+                          {m.text}
+                        </div>
+                        {/* 메신저 방에서는 시각을 안 적는다 (사용자 확정) — 일반 RP 글도 마찬가지 */}
+                        {!imsg && <div style={{ fontSize: 9, color: 'var(--faint)', marginTop: 3 }}>{fmtHM(m.date)}</div>}
                       </div>
-                      {mine && (
-                        <span className="m-act">
-                          <button onClick={() => { setEditMsg(m); setEditText(m.text); }}>EDIT</button>
-                          <button onClick={() => removeMsg(m)}>DEL</button>
-                        </span>
-                      )}
+                      {acts}
                     </div>
                   );
                 })}
@@ -439,20 +644,27 @@ ${rows}
                   <p className="hint" style={{ textAlign: 'center', marginTop: 30 }}>첫 메시지를 남겨보세요</p>
                 )}
               </div>
-
+              {/* 상대가 입력 중 — 메시지 영역 안쪽 맨 아래에 겹쳐 띄운다 (v2.1 사용자 요청).
+                  흐름에 끼워 넣으면 생겼다 사라질 때마다 메시지 영역 높이가 바뀌어 스크롤이 덜컹거렸다 */}
+              {sel.status === 'ongoing' && othersTyping.length > 0 && (
+                <div className="rp-typing">
+                  {`${[...new Set(othersTyping.map(t => t.name))].join(', ')} is typing...`}
+                </div>
+              )}
+              </div>
               {sel.status === 'ongoing' && (
-                <div className="rp-input">
+                <div className={`rp-input${imsg ? ' imsg' : ''}`}>
                   {/* 발화자 선택 — 캐릭터 / 지문 (v2.0 사용자 확정: 역극에는 이 둘만 있으면 된다) */}
                   <div className="char-pick" onClick={() => setPickOpen(o => !o)}>
                     {speaker === 'desc'
                       ? <div className="f" style={{ display: 'grid', placeItems: 'center', fontSize: 13, color: 'var(--sub)' }}>❝</div>
-                      : <Face ch={speakerChar} className="f" />}
+                      : <Face ch={speakerChar} className="f" crop={speakerChar && relFaceCrop(rel, sel?.auId, speakerChar)} />}
                     <small>{speakerLabel} ▾</small>
                     {pickOpen && (
                       <div className="rp-pick-pop" onClick={e => e.stopPropagation()}>
                         {speakChars.map(c => (
                           <button key={c.id} onClick={() => { setSpeaker(c.id); setPickOpen(false); }}>
-                            <Face ch={c} className="f" />{c.name}
+                            <Face ch={c} className="f" crop={relFaceCrop(rel, sel?.auId, c)} />{c.name}
                           </button>
                         ))}
                         <button onClick={() => { setSpeaker('desc'); setPickOpen(false); }}>
@@ -462,13 +674,64 @@ ${rows}
                       </div>
                     )}
                   </div>
-                  {/* 플레이스홀더 없음 (v1.8) · Enter 전송 / Shift+Enter 줄바꿈 · /desc 명령 지원
-                      포커스 중엔 모바일에서 역극 영역만 표시 (v1.9 — blur는 SEND 클릭이 씹히지 않게 지연) */}
-                  <KTextarea style={{ minHeight: 44 }} value={text} onChange={e => setText(e.target.value)}
-                    onFocus={() => setMFocus(true)}
-                    onBlur={() => setTimeout(() => setMFocus(false), 180)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-                  <button className="btn btn-dark" onClick={send}>SEND</button>
+                  <div className="im-field">
+                    {imsg && pendingImg && (
+                      <div className="im-pv">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingImg.url} alt="" />
+                        <button type="button" className="x" aria-label="사진 빼기"
+                          onClick={() => { URL.revokeObjectURL(pendingImg.url); setPendingImg(null); }}>✕</button>
+                      </div>
+                    )}
+                    <div className="im-line">
+                      {/* 사진 보내기 (커플홈 — 메신저 방): 상대에게 사진을 보냈다는 컨셉. 지문에는 안 붙는다.
+                          입력칸과 같은 줄에 두어 세로 가운데가 입력칸 가운데와 맞는다 (사용자 요청) */}
+                      {imsg && speaker !== 'desc' && (
+                        <>
+                          <button type="button" className="im-attach" data-tip="사진 보내기" aria-label="사진 보내기"
+                            onClick={() => document.getElementById('rpImg')?.click()}>＋</button>
+                          <input id="rpImg" type="file" accept="image/*" style={{ display: 'none' }}
+                            onChange={e => {
+                              const f = e.target.files?.[0];
+                              if (f && f.type.startsWith('image/')) {
+                                if (pendingImg) URL.revokeObjectURL(pendingImg.url);
+                                setPendingImg({ file: f, url: URL.createObjectURL(f) });
+                              }
+                              e.target.value = '';
+                            }} />
+                        </>
+                      )}
+                      {/* 플레이스홀더 없음 (v1.8) · Enter 전송 / Shift+Enter 줄바꿈 · /desc 명령 지원
+                          포커스 중엔 모바일에서 역극 영역만 표시 (v1.9 — blur는 SEND 클릭이 씹히지 않게 지연) */}
+                      <KTextarea style={{ minHeight: 44 }} value={text} onChange={e => { setText(e.target.value); noteTyping(e.target.value); }}
+                        onFocus={() => setMFocus(true)}
+                        onBlur={() => setTimeout(() => setMFocus(false), 180)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                        /* Ctrl+V로 붙여 넣은 그림도 사진 메시지로 (사용자 요청) — 메신저 방, 지문이 아닐 때 */
+                        onPaste={e => {
+                          if (!imsg || speaker === 'desc') return;
+                          const item = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'));
+                          const f = item?.getAsFile();
+                          if (!f) return;
+                          e.preventDefault();
+                          if (pendingImg) URL.revokeObjectURL(pendingImg.url);
+                          setPendingImg({ file: f, url: URL.createObjectURL(f) });
+                        }} />
+                    </div>
+                  </div>
+                  {/* 메신저 방에서도 원래 역극 모양으로 보내기 (커플홈 사용자 요청) — 문자 말고 서술·대사를 섞을 때 */}
+                  {imsg ? (
+                    /* ↑ 버튼 위의 빈자리에 「RP」 토글 (사용자 확정) */
+                    <div className="im-actions">
+                      <button type="button" className={`im-plain${plainRp ? ' on' : ''}`}
+                        data-tip={plainRp ? '원래 역극 모양으로 보냅니다 — 누르면 다시 문자 말풍선' : '누르면 말풍선 대신 원래 역극 모양으로 보냅니다'}
+                        aria-pressed={plainRp} onClick={() => setPlainRp(v => !v)}
+                        style={plainRp ? { background: 'var(--ink)', color: '#fff', borderColor: 'var(--ink)' } : undefined}>RP</button>
+                      <button className="im-send" onClick={send} aria-label="SEND">↑</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-dark" onClick={send}>SEND</button>
+                  )}
                 </div>
               )}
             </>
@@ -524,6 +787,14 @@ ${rows}
               )}
             </div>
           </div>
+          {/* 표시 방식 (커플홈 사용자 요청) — 대본형 / 아이폰 문자(iMessage) 모양. 방 안에서도 바꿀 수 있다 */}
+          <div>
+            <label className="k-label" style={{ marginBottom: 5 }}>표시 방식</label>
+            <div className="mini-seg">
+              <button className={nStyle === 'script' ? 'on' : ''} onClick={() => setNStyle('script')}>기본</button>
+              <button className={nStyle === 'imsg' ? 'on' : ''} onClick={() => setNStyle('imsg')}>메신저 (아이폰 문자)</button>
+            </div>
+          </div>
           <div>
             <label className="k-label" style={{ marginBottom: 7 }}>참여 회원</label>
             {nRel === 'none' ? (
@@ -549,6 +820,21 @@ ${rows}
       </Modal>
 
       {/* 메시지 수정 (본인) */}
+      {/* 사진 메시지 크게 보기 (커플홈) */}
+      {lbImg && <Lightbox srcs={[lbImg]} index={0} onClose={() => setLbImg(null)} />}
+      {/* 역극명 바꾸기 (커플홈 사용자 요청) — 개설자·관리자 */}
+      <Modal open={renameText !== null} onClose={() => setRenameText(null)} small title="역극명 바꾸기"
+        actions={<>
+          <button className="btn btn-ghost" onClick={() => setRenameText(null)}>CANCEL</button>
+          <button className="btn btn-dark" onClick={() => {
+            const t = (renameText ?? '').trim();
+            if (!t) { toast('역극명을 입력해 주세요'); return; }
+            patchRoom({ title: t }); setRenameText(null); toast('역극명을 바꿨습니다');
+          }}>SAVE</button>
+        </>}>
+        <KInput value={renameText ?? ''} onChange={e => setRenameText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { const t = (renameText ?? '').trim(); if (t) { patchRoom({ title: t }); setRenameText(null); } } }} />
+      </Modal>
       <Modal open={editMsg !== null} onClose={() => setEditMsg(null)} small title="메시지 수정" dirty
         actions={<>
           <button className="btn btn-ghost" onClick={() => setEditMsg(null)}>CANCEL</button>
@@ -583,9 +869,17 @@ ${rows}
         </div>
       </Modal>
 
+      {/* 역극 로그 — 열 때만 그린다 (게시판 목록도 그때 불러온다) */}
+      {logOpen && sel && (
+        <RpLogModal room={sel} msgs={msgsOf(sel)} chars={rpChars} sub={roomLabel(sel)}
+          isAdmin={isAdmin} onClose={() => setLogOpen(false)}
+          rightIds={rightIds}
+          faceInfo={Object.fromEntries(rpChars.map(c => [c.id, { ref: c.thumbId, crop: faceOf(c) }]))} />
+      )}
+
       {/* 완결 확인 (삭제 아님 — END/CANCEL) */}
       <ConfirmModal open={endAsk} title="역극을 완결 처리하시겠습니까?"
-        body="완결 후에는 공개 전환과 로그 내보내기를 사용할 수 있습니다."
+        body="완결 후에는 공개 전환을 사용할 수 있습니다. 로그 저장은 진행 중에도 LOG에서 할 수 있습니다."
         onClose={() => setEndAsk(false)}
         buttons={[
           { label: 'END', kind: 'dark', onClick: () => { patchRoom({ status: 'done' }); setEndAsk(false); } },

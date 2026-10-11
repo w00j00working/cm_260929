@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLocalList, BOARD_SEED, Post, newId, FoldType } from '@/lib/postStore';
 import { useBoards, boardHref, MAIN_BOARD_ID } from '@/lib/boardStore';
+import { useMenuSettings, canWriteAt } from '@/lib/menuStore';
 import { renderBody } from '@/lib/sanitize';
 import { KInput, KTextarea, KSelect, KCheck } from '@/components/ui/Kit';
 import { CropEditor, CropImg, CropValue } from '@/components/ui/CropEditor';
@@ -30,6 +31,7 @@ function WriteInner() {
   const bid = editing?.boardId ?? params.get('b') ?? MAIN_BOARD_ID;
   const { boards } = useBoards();
   const board = boards.find(b => b.id === bid) ?? boards[0];
+  const [menuSet, , menuLoaded] = useMenuSettings();
   const [title, setTitle] = useState('');
   const [writeMode, setWriteMode] = useState<'editor' | 'md' | 'html'>('editor'); // 에디터가 기본
   const [body, setBody] = useState('');
@@ -89,6 +91,16 @@ function WriteInner() {
     return (
       <section className="page">
         <div className="page-head"><PageTitle>WRITE</PageTitle><p>글쓰기는 로그인 후 이용할 수 있습니다</p></div>
+      </section>
+    );
+  }
+  /* 글쓰기 권한 (커플홈) — WRITE 버튼과 같은 판정으로 주소 직접 진입도 막는다. 새 글만 — 자기 글 수정은 그대로.
+     설정을 읽기 전에는 폼을 그리지 않는다 */
+  if (!editPid && !menuLoaded) return <section className="page" />;
+  if (!editPid && !canWriteAt(menuSet, boardHref(board.id), { loggedIn: true, isAdmin, id: user.id }, 'member', board.permWrite)) {
+    return (
+      <section className="page">
+        <div className="page-head"><PageTitle>WRITE</PageTitle><p>허용된 회원만 글을 쓸 수 있는 게시판입니다</p></div>
       </section>
     );
   }

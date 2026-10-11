@@ -66,7 +66,7 @@ export interface RoleSetting {
 }
 // desc는 선택 — 굳이 설명이 필요 없는 역할은 비워 둔다 (v2.0 사용자 요청: 메뉴 타이틀 폰트 설명 제거)
 export const ROLE_LABEL: Record<FontRole, { label: string; desc?: string }> = {
-  title: { label: '타이틀 폰트', desc: '배너 캡션 등 세리프 자리 전체' },
+  title: { label: '타이틀 폰트', desc: '로고·배너 캡션 — 메뉴 타이틀·스케줄러 달 제목도 기본은 이 폰트 (캐릭터·자관 이름과 내용 속 글씨는 기본 세리프)' },
   pagetitle: { label: '메뉴 타이틀 폰트' },
   subtitle: { label: '서브타이틀 폰트', desc: '타이틀 아래 설명 문구' },
   logosub: { label: '로고 서브타이틀 폰트', desc: '상단바 로고 아랫줄 문구 — TRPG 티켓 하단 문구도 따라감' },

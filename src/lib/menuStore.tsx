@@ -38,7 +38,18 @@ export interface MenuSettings {
   galWrite?: Record<string, MenuPerm>;
   /** 갤러리 글쓰기를 특정 회원으로 좁히기 (v2.0) — 'member'일 때만 의미 · 비우면 모든 회원 */
   galWriteMembers?: Record<string, string[]>;
+  /** 게시판별 글쓰기 권한 (커플홈 사용자 요청 — 갤러리처럼 모든 게시판에). 키는 writeKeyOf()가 만드는 주소
+   *  (`/videos`, `/videos?s=<섹션 id>`, `/threads`, `/tchars`, `/dotori`, `/playlog`, `/loadb?s=<id>` …).
+   *  미지정은 게시판마다의 기본값(캐릭터·플레이기록은 관리자, 나머지는 가입자).
+   *  리스트(/board)는 게시판 설정의 permWrite, 로드비 기본 페이지는 roadUpload가 그대로 값이다 */
+  writePerm?: Record<string, MenuPerm>;
+  /** 글쓰기를 특정 회원으로 좁히기 — 'member'일 때만 의미 · 비우면 로그인한 모든 회원 */
+  writeMembers?: Record<string, string[]>;
   calTitle: 'en' | 'num';            // 스케줄러 달 표기 (v1.9) — AUGUST 2026 / 2026.08
+  /** 스케줄러 달 제목 폰트 (커플홈 사용자 요청) — 스케줄러 화면에서 고른다. 비우면 타이틀 폰트를 따라간다 */
+  calFont?: string;
+  /** 스케줄러 달 제목 크기 % — 비우면 100 */
+  calFontScale?: number;
   imgProtect: ImgProtectArea[];      // 이미지 저장 방지 영역 (v1.9 — 우클릭·드래그 차단, 관리자 제외)
 }
 
@@ -47,7 +58,6 @@ export type ImgProtectArea = 'board' | 'comm' | 'tchar' | 'chars' | 'rels';
 
 export const IMG_PROTECT_AREAS: { key: ImgProtectArea; label: string; paths: string[] }[] = [
   { key: 'board', label: '게시판 (갤러리·로드비 포함)', paths: ['/board', '/gallery', '/loadb'] },
-  { key: 'comm', label: '커미션', paths: ['/comm', '/comm-apply'] },
   { key: 'tchar', label: 'TRPG 캐릭터', paths: ['/tchars'] },
   { key: 'chars', label: '자캐 (캐릭터)', paths: ['/chars'] },
   { key: 'rels', label: '자관', paths: ['/rels'] },
@@ -116,7 +126,7 @@ export const DEFAULT_MENU_SETTINGS: MenuSettings = {
 const KEY = 'ohome.menuset.v1';
 
 /** 주소를 바꾼 메뉴 (v2.0 사용자 요청) — 옛 이름이 그대로였던 것들 */
-const MOVED: Record<string, string> = { '/roadview': '/loadb', '/backup': '/gallery' };
+const MOVED: Record<string, string> = { '/roadview': '/loadb', '/backup': '/gallery', '/trpg': '/log' };   // /trpg → /log (커플홈)
 
 /**
  * 저장된 메뉴의 옛 주소를 새 주소로 (v2.0).
@@ -144,6 +154,9 @@ function moveHrefs(p: Partial<MenuSettings>): Partial<MenuSettings> {
       })),
     } : {}),
     ...(p.removedBoards ? { removedBoards: p.removedBoards.map(mv) } : {}),
+    // 게시판별 글쓰기 권한·멤버는 주소가 키다 (writeKeyOf) — 주소를 옮기면 키도 옮긴다 (커플홈 — /trpg → /log)
+    ...(p.writePerm ? { writePerm: Object.fromEntries(Object.entries(p.writePerm).map(([k, v]) => [mv(k), v])) } : {}),
+    ...(p.writeMembers ? { writeMembers: Object.fromEntries(Object.entries(p.writeMembers).map(([k, v]) => [mv(k), v])) } : {}),
   };
 }
 
@@ -211,6 +224,36 @@ export interface ExtraEntry { id: string; name: string; href: string; anchor: st
 export const boardEntries = (boards?: { id: string; name: string }[]): ExtraEntry[] =>
   (boards ?? []).filter(b => b.id !== 'main')
     .map(b => ({ id: b.id, name: b.name, href: extraBoardHref(b.id), anchor: '/board' }));
+
+/**
+ * 트리에 항목 하나 끼워 넣기 (커플홈 — 새 자관을 만들면 자관 항목 뒤에 바로 배치한다).
+ * after(href)가 참인 **마지막** 항목 뒤에 넣는다. 그 항목이 하위 메뉴면 같은 상위 안에 하위로,
+ * 단독 메뉴면 그 뒤에 단독 메뉴로. 이미 있거나 기준 항목이 없으면(자관을 메뉴에서 뺐다면) null — 미배치에 머문다
+ */
+export function insertAfterInTree(
+  tree: MenuGroupNode[], after: (href: string) => boolean, href: string, label: string,
+): MenuGroupNode[] | null {
+  if (tree.some(g => g.href === href || g.items.some(it => it.href === href))) return null;
+  for (let gi = tree.length - 1; gi >= 0; gi--) {
+    const g = tree[gi];
+    if (g.href) {
+      if (!after(g.href)) continue;
+      const node: MenuGroupNode = { id: newGroupId(), label, href, items: [] };
+      return [...tree.slice(0, gi + 1), node, ...tree.slice(gi + 1)];
+    }
+    let idx = -1;
+    g.items.forEach((it, i) => { if (after(it.href)) idx = i; });
+    if (idx < 0) continue;
+    const items = [...g.items.slice(0, idx + 1), { href }, ...g.items.slice(idx + 1)];
+    return tree.map((x, i) => (i === gi ? { ...x, items } : x));
+  }
+  return null;
+}
+
+/** 트리에서 이 주소를 뺀다 — 항목(자관 등)을 지웠을 때. 단독 메뉴였으면 그 메뉴째로 */
+export function removeFromTree(tree: MenuGroupNode[], href: string): MenuGroupNode[] {
+  return tree.filter(g => g.href !== href).map(g => ({ ...g, items: g.items.filter(it => it.href !== href) }));
+}
 
 /** 메뉴 관리에서 지정한 페이지 상단 큰 제목 (5.2 v1.9) — 정확히 일치하는 href만, 없으면 null */
 export function pageTitleFor(s: MenuSettings, href: string): string | null {
@@ -301,6 +344,27 @@ export function canGalleryWrite(s: MenuSettings, secId: string, viewer: MenuView
   if (viewer.isAdmin) return true;
   if ((s.galWrite?.[secId] ?? 'member') === 'admin') return false;
   const members = s.galWriteMembers?.[secId];
+  return !members?.length || (!!viewer.id && members.includes(viewer.id));
+}
+
+/** 글쓰기 권한 저장 키 (커플홈) — 기본 섹션은 페이지 주소 그대로, 추가 섹션은 `?s=<id>`
+ *  (메뉴 주소에 적힌 별명이 아니라 id로 통일 — 별명은 바뀔 수 있다) */
+export const writeKeyOf = (href: string, secId?: string) =>
+  (!secId || secId === 'main' ? href : `${href}?s=${secId}`);
+
+/** 게시판 글쓰기 권한 판정 (커플홈 사용자 요청 — 갤러리의 canGalleryWrite를 모든 게시판으로).
+ *  관리자는 항상, 「관리자」면 관리자만, 「가입자」면 로그인한 회원 중 writeMembers[key]에 든 사람
+ *  (비우면 전부). perm을 넘기면 그 값을 쓴다(리스트 게시판의 permWrite, 로드비의 roadUpload처럼
+ *  권한이 다른 곳에 저장된 게시판) — 안 넘기면 writePerm[key], 그것도 없으면 def */
+export function canWriteAt(
+  s: MenuSettings, key: string, viewer: MenuViewer, def: MenuPerm = 'member', perm?: MenuPerm,
+): boolean {
+  if (viewer.isAdmin) return true;
+  const p = perm ?? s.writePerm?.[key] ?? def;
+  if (p === 'admin') return false;
+  // 「방문자」(로드비 옛 옵션)도 글은 로그인해야 쓴다 — 작성자 없는 글은 만들지 않는다
+  if (!viewer.loggedIn) return false;
+  const members = s.writeMembers?.[key];
   return !members?.length || (!!viewer.id && members.includes(viewer.id));
 }
 

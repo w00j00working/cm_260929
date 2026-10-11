@@ -6,7 +6,7 @@ import React, { Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLocalList } from '@/lib/postStore';
-import { Character, CHAR_SEED, charGrant, charWithAu, Relation, REL_SEED , findByKey } from '@/lib/charStore';
+import { Character, CHAR_SEED, charGrant, charWithAu, Relation, REL_SEED , findByKey, resolveAuKey } from '@/lib/charStore';
 import { CharEditForm } from '@/components/chars/CharEditForm';
 import { useToast } from '@/components/ui/Toast';
 import { PageTitle, EditableDesc } from '@/components/ui/PageText';
@@ -17,12 +17,13 @@ function CharEditInner() {
   const { user, isAdmin } = useAuth();
   const toast = useToast();
   const params = useSearchParams();
-  const auKey = params.get('au');   // `${relId}:${auId}`
+  const auParam = params.get('au');   // `${relId}:${auId}` 또는 별명 (커플홈) — 아래에서 키로 푼다
   const [chars, setChars, loaded] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
 
   // 별명 주소로도 열린다 (v2.0 사용자 요청 — 주소를 나중에 바꿔도 옛 주소가 살아 있게)
   const ch = findByKey(chars, id);
+  const auKey = resolveAuKey(ch, rels, auParam);   // 별명(프로필·자관 AU)으로 들어와도 키로
   // 관리자 또는 「편집까지」 권한이 부여된 회원 (3차 회원-캐릭터 연결, v1.9)
   const canEdit = isAdmin || (ch && charGrant(ch, user?.id) === 'edit');
   if (!loaded) return <section className="page" />;
@@ -48,9 +49,9 @@ function CharEditInner() {
   const auProf = auKey ? ch.auProfiles?.[auKey] : undefined;
   const formInitial = auKey
     ? (auProf
-      ? charWithAu(ch, auKey)
+      ? { ...charWithAu(ch, auKey), slug: auProf.slug ?? '' }   // 주소 칸은 이 AU 프로필의 별명 (base 주소가 아니다)
       : {
-        ...ch, name: '', sub: '', basicHtml: '', tabs: [], colors: [], colorTipMode: 'hex' as const,
+        ...ch, slug: '', name: '', sub: '', basicHtml: '', tabs: [], colors: [], colorTipMode: 'hex' as const,
         specs: [{ label: '성별', value: '' }, { label: '키', value: '' }],
         arts: [], artId: undefined, thumbId: undefined, thumbCrop: undefined,
       })
@@ -64,7 +65,10 @@ function CharEditInner() {
       </div>
       <CharEditForm
         initial={formInitial}
-        existingIds={chars.filter(c => c.id !== ch.id).flatMap(c => [c.id, ...(c.slug ? [c.slug] : [])])}
+        existingIds={auKey
+          // AU 편집에서는 이 캐릭터의 다른 AU 프로필 별명과 겹치지 않게 (커플홈)
+          ? Object.entries(ch.auProfiles ?? {}).filter(([k]) => k !== auKey).flatMap(([, p]) => (p.slug ? [p.slug] : []))
+          : chars.filter(c => c.id !== ch.id).flatMap(c => [c.id, ...(c.slug ? [c.slug] : [])])}
         auMode={!!auKey}
         onCancel={() => router.push(back)}
         onSave={c => {
@@ -77,6 +81,7 @@ function CharEditInner() {
                 [auKey]: {
                   // 폼 밖에서 정한 값(상세 아트 위치 등)은 그대로 두고 폼 값만 덮어쓴다 (v2.0)
                   ...x.auProfiles?.[auKey],
+                  slug: c.slug,   // 이 AU 프로필의 주소 별명 (커플홈)
                   name: c.name, sub: c.sub, color: c.color, themeMode: c.themeMode,
                   colors: c.colors, colorTipMode: c.colorTipMode,
                   specs: c.specs, tabs: c.tabs, basicHtml: c.basicHtml,

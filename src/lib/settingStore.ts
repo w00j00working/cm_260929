@@ -9,6 +9,8 @@
 // primeSettings()로 캐시를 채운다. 이후 읽기는 전부 동기(캐시)라 기존 코드 모양이 유지된다.
 // 쓰기는 캐시 → localStorage(첫 페인트용 사본) → DB 순으로 나간다.
 import { backend, isServerMode } from './backend';
+import { serverConfig } from './serverConfig';
+import { currentHomeId } from './home';
 
 const cache = new Map<string, unknown>();
 let primed = false;
@@ -26,7 +28,46 @@ const LOCAL_ONLY = new Set<string>([
      그 옛 값이 로컬 토글을 덮어써 아무리 바꿔도 되돌아갔다. 설정 쓰기는 관리자 전용이라
      일반 회원은 서버에 고칠 수도 없다 — 알림 목록과 같은 기기 보관으로 되돌린다. */
   'ohome.notifset.v1',
+  'ohome.settingsFrom.v1', // 이 브라우저의 설정 사본이 어느 DB에서 왔는지 (아래 primeSettings)
+  'ohome.home.v1',         // 총관리자가 리스트에서 고른 홈 (v2.1)
 ]);
+
+/** 이 브라우저의 설정 사본 출처 — 'firebase:<projectId>' / 'supabase:<url>' / 'local' */
+const FROM_KEY = 'ohome.settingsFrom.v1';
+/** 설정 사본과 함께 지워야 하는 파생·구버전 키 */
+const DERIVED_KEYS = ['ohome.themeCss.v1', 'ohome.theme.v1'];
+
+function configIdentity(): string {
+  const cfg = serverConfig();
+  if (!cfg) return 'local';
+  // 홈(자관)도 출처의 일부 — 총관리자가 다른 홈으로 들어가면 앞 홈의 사본을 비운다 (v2.1)
+  const home = currentHomeId() ? `#${currentHomeId()}` : '';
+  return `firebase:${cfg.projectId}${cfg.databaseId ? '/' + cfg.databaseId : ''}${home}`;
+}
+
+/**
+ * 연결된 DB가 지난 방문과 다르면 브라우저에 남은 서버 설정 사본을 비운다 (v2.1 포크 제보).
+ *
+ * primeSettings는 서버 설정을 localStorage에도 복사해 두는데(첫 페인트용), 그 뒤 연결 파일을
+ * 지우거나 다른 프로젝트로 바꾸면 서버에서는 아무것도 안 받으면서 getSetting은 옛 사본으로
+ * 떨어져 **이전 DB의 테마·메뉴·로고가 그대로 보였다**. 저장소를 복제해 새 홈을 만들 때
+ * 원본 홈의 디자인이 따라오는 모양이 된다.
+ *
+ * 지우는 조건은 「지난번에 서버에서 받아 온 기록이 있고, 지금 DB가 그것과 다를 때」뿐이다 —
+ * 로컬 모드에서 꾸민 설정을 연결 직후 서버로 올리는 흐름(pushLocalSettings)과, 이 기록이
+ * 없는 예전 버전 브라우저는 건드리지 않는다.
+ */
+function dropStaleCopies(now: string) {
+  let prev: string | null = null;
+  try { prev = localStorage.getItem(FROM_KEY); } catch { /* 무시 */ }
+  if (prev && prev !== 'local' && prev !== now) {
+    for (const k of [...SETTING_KEYS, ...DERIVED_KEYS]) {
+      cache.delete(k);
+      try { localStorage.removeItem(k); } catch { /* 무시 */ }
+    }
+  }
+  try { localStorage.setItem(FROM_KEY, now); } catch { /* 무시 */ }
+}
 
 /** 이 키는 기기 보관 전용인가 — 백업 복원·이전이 서버로 올리지 않게 (v2.0) */
 export const isLocalOnlySetting = (key: string) => LOCAL_ONLY.has(key);
@@ -40,7 +81,7 @@ export const isLocalOnlySetting = (key: string) => LOCAL_ONLY.has(key);
 export const SETTING_KEYS = [
   'ohome.theme.v2', 'ohome.themePresets.v1', 'ohome.fonts.v2', 'ohome.menuset.v1', 'ohome.site.v1',
   'ohome.pagetext.v1', 'ohome.cursor.v1', 'ohome.bgm.v1', 'ohome.boardset.v1', 'ohome.boards.v1',
-  'ohome.commset.v1', 'ohome.memoset.v1', 'ohome.threadset.v1', 'ohome.trpgset.v1',
+  'ohome.commset.v1', 'ohome.memoset.v1', 'ohome.threadset.v1', 'ohome.trpgset.v1', 'ohome.diaryset.v1',
   'ohome.relqsets.v1', 'ohome.main.v1', 'ohome.sched.v1',
   'ohome.membertags.v1', 'ohome.invite.v1', 'ohome.roadnext.v1', 'ohome.repo.v1',
   'ohome.sections.v1', 'ohome.intro.v1', 'ohome.links.v1',
@@ -49,6 +90,7 @@ export const SETTING_KEYS = [
 /** 앱 시작 시 1회 — 서버에 저장된 설정을 전부 받아 캐시 */
 export async function primeSettings(): Promise<void> {
   primed = true;
+  dropStaleCopies(configIdentity());
   const be = backend();
   if (!be) return;
   try {

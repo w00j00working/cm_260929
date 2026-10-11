@@ -7,30 +7,35 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLocalList } from '@/lib/postStore';
-import { Character, CHAR_SEED, charGrant, charWithAu, chipBorder, Relation, REL_SEED , findByKey} from '@/lib/charStore';
+import { Character, CHAR_SEED, charGrant, charWithAu, chipBorder, Relation, REL_SEED , findByKey, relsWithoutChar, resolveAuKey, auParamOf } from '@/lib/charStore';
+import { phStyle } from '@/lib/color';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { useFonts } from '@/lib/fontStore';
 import { useTheme } from '@/lib/ThemeProvider';
 import { createPortal } from 'react-dom';
 import { BlobImg, useBlobUrl } from '@/lib/blobStore';
 import { CroppedBlobImg, CropEditor, type CropValue } from '@/components/ui/CropEditor';
+import { InkFit } from '@/components/ui/InkFit';
 
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 import { useSectionTitle } from '@/lib/sectionStore';
 import { ConfirmModal } from '@/components/ui/Modal';
+import { HtmlBody } from '@/components/ui/HtmlBody';
+import { Lightbox } from '@/components/ui/Lightbox';
 
 function CharDetailInner() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user, isAdmin } = useAuth();
   const [chars, setChars, loaded] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
-  const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
+  const [rels, setRels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
   const { familyOf } = useFonts();
   // 큰 글씨 — 추가 섹션(창고캐 등)이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
   const tt = useSectionTitle('chars', findByKey(chars, id)?.secId, 'CHARACTERS');
   const params = useSearchParams();
   const [tab, setTab] = useState('basic');
   const [artIdx, setArtIdx] = useState(0);
+  const [lbOpen, setLbOpen] = useState(false);   // 대표 아트 전체 보기 (커플홈 사용자 요청 — 갤러리와 같은 라이트박스)
   const [delAsk, setDelAsk] = useState(false);   // 캐릭터 삭제 확인
   const infoRef = useRef<HTMLDivElement>(null);
 
@@ -44,7 +49,18 @@ function CharDetailInner() {
       : [])
     : []), [rels, ch]);
   // AU 편집에서 ?au= 로 돌아오면 그 AU가 선택된 채 시작
-  const [auKey, setAuKey] = useState<string | null>(() => params.get('au'));
+  // ?au= 는 별명(프로필 별명·자관 AU 별명)으로도 들어온다 (커플홈 사용자 요청 — AU 프로필의 고유 주소) → 키로 푼다
+  const [auSel, setAuSel] = useState<string | null>(() => params.get('au'));
+  const auKey = resolveAuKey(ch, rels, auSel);
+  /** AU 고르기 — 주소(?au=)도 별명으로 바꿔 두어 그대로 복사해 공유할 수 있게. 원본이면 뗀다 */
+  const selectAu = (k: string | null) => {
+    setAuSel(k);
+    try {
+      const u = new URL(window.location.href);
+      if (k) u.searchParams.set('au', auParamOf(ch, rels, k)); else u.searchParams.delete('au');
+      window.history.replaceState(null, '', u.toString());
+    } catch { /* 무시 */ }
+  };
   // 대표 아트 우클릭 → 상세 화면에 보일 위치 조정 (v2.0)
   const [artCtx, setArtCtx] = useState<{ x: number; y: number; ref: string } | null>(null);
   // 편집 중인 아트 참조 + 그때 실제 표시 영역의 가로/세로 비 (3:4가 아니라 화면 높이에 따라 달라진다)
@@ -87,7 +103,7 @@ function CharDetailInner() {
     return () => setPageTheme(null);
   }, [pageColor, setPageTheme]);
 
-  const curTab = eff?.tabs.find(t => t.id === tab);
+  const curTab = eff?.tabs?.find(t => t.id === tab);   // 탭 목록이 없는 옛 데이터도 터지지 않게
   const tabHtml = useMemo(
     () => (loaded && curTab ? sanitizeHtml(curTab.html) : ''),
     [loaded, curTab],
@@ -150,15 +166,22 @@ function CharDetailInner() {
           body="프로필·탭 정보가 함께 삭제되며 복구할 수 없습니다. 이 캐릭터가 들어간 자관에서는 멤버 표시가 사라집니다."
           onClose={() => setDelAsk(false)}
           buttons={[
-            { label: 'DELETE', kind: 'accent', onClick: () => { setChars(chars.filter(c => c.id !== ch.id)); router.push(tt.href); } },
+            { label: 'DELETE', kind: 'accent', onClick: () => {
+              setChars(chars.filter(c => c.id !== ch.id));
+              // 들어가 있던 자관에서도 바로 뺀다 (커플홈 — 자관 상세의 자동 정리에 맡기지 않는다)
+              const nextRels = relsWithoutChar(rels, ch.id);
+              if (nextRels) setRels(nextRels);
+              router.push(tt.href);
+            } },
             { label: 'CANCEL', kind: 'ghost', onClick: () => setDelAsk(false) },
           ]} />
       </div>
       {/* AU 프로필 리스트 (v1.9) — 자관에 추가된 AU가 있으면 우상단, 각 AU의 저장 썸네일 기준 */}
       {charAus.length > 0 && (
         <div className="au-list" style={{ justifyContent: 'flex-end', marginBottom: 10 }}>
-          <div className={`au-item ${auKey === null ? 'on' : ''} ph ${ch.thumbClass}`} style={{ borderColor: auKey === null ? 'var(--accent)' : 'var(--line)' }}
-            onClick={() => setAuKey(null)}>
+          {/* 이미지가 없을 때의 네모 색은 캐릭터 테마색 (커플홈 사용자 요청) */}
+          <div className={`au-item ${auKey === null ? 'on' : ''} ph ${ch.thumbClass}`} style={{ ...phStyle([ch.color]), borderColor: auKey === null ? 'var(--accent)' : 'var(--line)' }}
+            onClick={() => selectAu(null)}>
             {(ch.thumbId || ch.arts?.[0]) && <CroppedBlobImg fileRef={ch.thumbId ?? ch.arts?.[0]} crop={ch.thumbCrop} ph={ch.thumbClass} />}
             <small>원본</small>
           </div>
@@ -170,9 +193,9 @@ function CharDetailInner() {
             const ref = p?.thumbId ?? p?.arts?.[0];
             return (
               <div key={a.key} className={`au-item ${auKey === a.key ? 'on' : ''} ph ${ch.thumbClass}`}
-                style={{ borderColor: auKey === a.key ? 'var(--accent)' : 'var(--line)' }}
+                style={{ ...phStyle([p?.color ?? ch.color]), borderColor: auKey === a.key ? 'var(--accent)' : 'var(--line)' }}
                 data-tip={`${a.relName} · ${a.label}`}
-                onClick={() => setAuKey(a.key)}>
+                onClick={() => selectAu(a.key)}>
                 {ref && <CroppedBlobImg fileRef={ref} crop={p?.thumbCrop} ph={ch.thumbClass} />}
                 <small>{a.label}</small>
               </div>
@@ -183,7 +206,7 @@ function CharDetailInner() {
       {/* AU 미등록 (v1.9 사용자 확정) — base를 보여주지 않고 그 AU에 맞춰 캐릭터를 새로 등록 */}
       {auKey && !auRegistered ? (
         <div className="panel" style={{ textAlign: 'center', padding: 56 }}>
-          <div style={{ fontFamily: 'var(--serif)', fontSize: 24, letterSpacing: '.14em', marginBottom: 8 }}>
+          <div style={{ fontFamily: 'var(--serif-base)', fontSize: 24, letterSpacing: '.14em', marginBottom: 8 }}>
             {charAus.find(a => a.key === auKey)?.label ?? 'AU'}
           </div>
           <p style={{ fontSize: 13, color: 'var(--faint)', marginBottom: 16 }}>
@@ -207,17 +230,19 @@ function CharDetailInner() {
           )}
         </div>
 
-        {/* 중앙 아트 — 스티키 · 추가 아트가 있으면 클릭으로 넘겨보기 */}
+        {/* 중앙 아트 — 스티키 · 클릭하면 전체 보기(라이트박스), 추가 아트는 아래 점을 눌러 넘겨보기 */}
         {(() => {
           const arts = eff.arts && eff.arts.length > 0 ? eff.arts : (eff.artId ? [eff.artId] : []);
           if (arts.length === 0 && !eff.artUrl) {
-            return <div className={`profile-center ph ${ch.thumbClass}`}><span>CHARACTER FULL ART</span></div>;
+            return <div className={`profile-center ph ${ch.thumbClass}`} style={phStyle([eff?.color ?? ch.color])}><span>CHARACTER FULL ART</span></div>;
           }
           const cur = Math.min(artIdx, arts.length - 1);
           return (
             <div className="profile-center" ref={artBoxRef}
-              style={{ cursor: arts.length > 1 ? 'pointer' : undefined }}
-              onClick={() => { if (arts.length > 1) setArtIdx(i => (i + 1) % arts.length); }}
+              style={{ cursor: (arts[cur] ?? eff.artUrl) ? 'zoom-in' : undefined }}
+              /* 클릭 → 전체 보기 (커플홈 사용자 요청 — 갤러리와 같은 방식). 라이트박스는 아래(섹션 끝)에서 띄운다 —
+                 이 div 안에서 띄우면 배경 클릭(닫기)이 React 트리를 타고 여기로 올라와 다시 열린다 */
+              onClick={() => { if (arts[cur] ?? eff.artUrl) setLbOpen(true); }}
               /* 대표 아트 우클릭 → 이 화면에 보일 위치 조정 (관리자, v2.0 사용자 확정) */
               onContextMenu={e => {
                 if (!(isAdmin || charGrant(ch, user?.id) === 'edit') || cur !== 0) return;
@@ -230,12 +255,15 @@ function CharDetailInner() {
                   맞지 않는다 — 여기서 따로 잡은 값이 있을 때만 쓰고, 없으면 가운데 기준 (v2.0) */}
               <CroppedBlobImg fileRef={arts[cur] ?? eff.artUrl}
                 crop={cur === 0 ? eff.artCrop : undefined}
-                ph={ch.thumbClass} label="CHARACTER FULL ART" />
+                ph={ch.thumbClass} phStyle={phStyle([eff?.color ?? ch.color])} label="CHARACTER FULL ART" />
               {arts.length > 1 && (
                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 12, display: 'flex', justifyContent: 'center', gap: 5, zIndex: 3 }}>
                   {arts.map((_, i) => (
-                    <i key={i} style={{
-                      width: i === cur ? 16 : 6, height: 6, borderRadius: 4,
+                    /* 점을 눌러 아트 바꾸기 — 이미지 클릭은 전체 보기로 넘어갔으므로 (커플홈).
+                       보이는 점은 작게 두고 누르는 자리만 padding으로 키운다 */
+                    <i key={i} onClick={e => { e.stopPropagation(); setArtIdx(i); }} style={{
+                      width: i === cur ? 16 : 6, height: 6, borderRadius: 4, cursor: 'pointer',
+                      padding: 4, boxSizing: 'content-box', backgroundClip: 'content-box',
                       background: i === cur ? '#fff' : 'rgba(255,255,255,.45)', transition: '.2s',
                     }} />
                   ))}
@@ -249,12 +277,14 @@ function CharDetailInner() {
         <div className="panel profile-info" ref={infoRef} style={{ fontFamily: familyOf(eff.bodyFontId) }}>
           {/* 크기는 캐릭터마다 직접 정한다 (등록·수정의 「이름 크기」) — 자동으로 줄이면
               이름 길이에 따라 어중간해져서, 정한 크기를 그대로 쓴다 (v2.0 사용자 확정) */}
-          <div style={{
-            fontFamily: familyOf(eff.fontId) ?? 'var(--serif)', fontSize: eff.nameSize ?? 38,
+          {/* 세로 자리는 고정하지 않는다 (커플홈 사용자 제보) — 필기체처럼 위아래로 긴 폰트는 1.1배 줄 칸을 넘어
+              위 여백·아래 줄(성별·키)을 침범했다. 실제 글자 모양을 재서 그만큼 + 여백을 차지한다 */}
+          <InkFit text={eff.name} style={{
+            fontFamily: familyOf(eff.fontId) ?? 'var(--serif-base)', fontSize: eff.nameSize ?? 38,
             // 굵기는 끌 수 있다 (v2.0 사용자 요청 — 폰트에 따라 볼드가 안 어울린다). 기본은 지금처럼 굵게
             fontWeight: (eff.nameBold ?? true) ? 600 : 400,
             letterSpacing: '.2em', lineHeight: 1.1,
-          }}>{eff.name}</div>
+          }} />
           <div className="sub" style={{ marginBottom: 14 }}>{eff.sub}</div>
 
           {tab === 'basic' ? (
@@ -286,13 +316,14 @@ function CharDetailInner() {
                   </>
                 )}
               </dl>
-              <div className="prose" dangerouslySetInnerHTML={{ __html: basicHtml }} />
+              {/* 본문 이미지 클릭 → 전체 보기 (커플홈 사용자 요청) — 게시판 본문과 같은 HtmlBody */}
+              <HtmlBody className="prose" html={basicHtml} />
             </>
           ) : (
             <>
               <h3 className="tab-tt">{curTab?.title}</h3>
               {curTab?.subtitle && <div className="sub">{curTab.subtitle}</div>}
-              <div className="prose" dangerouslySetInnerHTML={{ __html: tabHtml }} />
+              <HtmlBody className="prose" html={tabHtml} />
             </>
           )}
         </div>
@@ -312,6 +343,14 @@ function CharDetailInner() {
         </div>,
         document.body,
       )}
+      {/* 대표 아트 전체 보기 — 등록된 아트 전부를 ‹ › 로 넘겨 본다 (커플홈 사용자 요청) */}
+      {lbOpen && eff && (() => {
+        const arts = eff.arts && eff.arts.length > 0 ? eff.arts : (eff.artId ? [eff.artId] : []);
+        const srcs = arts.length ? arts : (eff.artUrl ? [eff.artUrl] : []);
+        return srcs.length
+          ? <Lightbox srcs={srcs} index={Math.min(artIdx, srcs.length - 1)} onClose={() => setLbOpen(false)} />
+          : null;
+      })()}
       {artCropOpen && (
         <ArtCropModal fileRef={artCropOpen.ref} ratio={artCropOpen.ratio} crop={eff?.artCrop}
           onClose={() => setArtCropOpen(null)}

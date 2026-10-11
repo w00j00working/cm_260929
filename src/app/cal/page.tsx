@@ -7,12 +7,13 @@ import { useMainStore } from '@/lib/mainStore';
 import { useSched, SchedEvent, eventColor, eventOnDate } from '@/lib/schedStore';
 import { DdayWidget, TodoWidget } from '@/components/main/widgets';
 import { Modal, useConfirmDelete } from '@/components/ui/Modal';
-import { KInput, KTextarea, KSelect, KCheck, KDate, KToggle } from '@/components/ui/Kit';
+import { KInput, KTextarea, KSelect, KCheck, KDate, KToggle, KStep } from '@/components/ui/Kit';
 import { ColorField } from '@/components/ui/ColorField';
 import { DragList } from '@/components/ui/DragList';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 import { useToast } from '@/components/ui/Toast';
 import { useMenuSettings } from '@/lib/menuStore';
+import { useFonts } from '@/lib/fontStore';
 import { useSectionParam } from '@/lib/sectionStore';
 
 const MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
@@ -34,7 +35,20 @@ function CalInner() {
   const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
   // 오른쪽 카드가 보여 줄 날짜 (v2.0) — 처음에는 오늘
   const [picked, setPicked] = useState(() => fmt(now.getFullYear(), now.getMonth(), now.getDate()));
-  const [menuSet] = useMenuSettings();   // 달 표기 방식 (v1.9 — 메뉴 관리의 스케줄러 행)
+  const [menuSet, patchMenu] = useMenuSettings();   // 달 표기 방식 (v1.9 — 메뉴 관리의 스케줄러 행)
+  /* 달 제목 폰트 (커플홈 사용자 요청) — 타이틀 폰트를 로고 등과 같이 쓰면 달 제목까지 따라 바뀌어
+     (필기체 숫자가 깨지는 등) 스케줄러에서 따로 고를 수 있게 한다. 관리자만, 제목에 마우스를 올리면 Aa */
+  const { fonts, familyOf } = useFonts();
+  const [fontOpen, setFontOpen] = useState(false);
+  const [fontPick, setFontPick] = useState('');
+  const [fontScale, setFontScale] = useState(100);
+  const titleStyle = (id: string | undefined, scale: number | undefined): React.CSSProperties => ({
+    ...(id ? { fontFamily: familyOf(id) } : null),
+    ...(scale && scale !== 100 ? { fontSize: `calc(20px*var(--fs,1)*${scale / 100})` } : null),
+  });
+  const monthTitle = (menuSet.calTitle ?? 'en') === 'num'
+    ? `${view.y}.${String(view.m + 1).padStart(2, '0')}`
+    : `${MONTHS[view.m]} ${view.y}`;
   const [catMng, setCatMng] = useState(false);
   // 일정 등록/수정 모달
   const [evOpen, setEvOpen] = useState(false);
@@ -155,10 +169,14 @@ function CalInner() {
           <div className="cal-head">
             <button className="btn btn-ghost" style={{ padding: '6px 12px' }}
               onClick={() => setView(v => ({ y: v.m === 0 ? v.y - 1 : v.y, m: (v.m + 11) % 12 }))}>‹</button>
-            {/* 표기 방식은 환경설정 > 메뉴 관리의 스케줄러 행에서 (v1.9) */}
-            <b>{(menuSet.calTitle ?? 'en') === 'num'
-              ? `${view.y}.${String(view.m + 1).padStart(2, '0')}`
-              : `${MONTHS[view.m]} ${view.y}`}</b>
+            {/* 표기 방식은 환경설정 > 메뉴 관리의 스케줄러 행에서 (v1.9) · 폰트는 여기서 (커플홈) */}
+            <span className="cal-ttl">
+              <b style={titleStyle(menuSet.calFont, menuSet.calFontScale)}>{monthTitle}</b>
+              {isAdmin && (
+                <button className="cal-font-btn" data-tip="달 제목 폰트"
+                  onClick={() => { setFontPick(menuSet.calFont ?? ''); setFontScale(menuSet.calFontScale ?? 100); setFontOpen(true); }}>Aa</button>
+              )}
+            </span>
             <button className="btn btn-ghost" style={{ padding: '6px 12px' }}
               onClick={() => setView(v => ({ y: v.m === 11 ? v.y + 1 : v.y, m: (v.m + 1) % 12 }))}>›</button>
           </div>
@@ -297,6 +315,32 @@ function CalInner() {
         </div>
       </Modal>
 
+      {/* 달 제목 폰트 (커플홈) — 미리보기를 보며 고르고 SAVE */}
+      <Modal open={fontOpen} onClose={() => setFontOpen(false)} small title="달 제목 폰트"
+        desc="스케줄러 달 제목에만 적용됩니다 — 「타이틀 폰트 따라가기」면 로고 등과 같은 폰트"
+        actions={<>
+          <button className="btn btn-ghost" onClick={() => setFontOpen(false)}>CANCEL</button>
+          <button className="btn btn-dark" onClick={() => {
+            patchMenu({ calFont: fontPick || undefined, calFontScale: fontScale === 100 ? undefined : fontScale });
+            setFontOpen(false);
+          }}>SAVE</button>
+        </>}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <KSelect value={fontPick} onChange={setFontPick} minWidth={220} maxWidth={320}
+            options={[
+              { value: '', label: '타이틀 폰트 따라가기' },
+              ...fonts.map(fo => ({ value: fo.id, label: <span style={{ fontFamily: familyOf(fo.id) }}>{fo.name}</span> })),
+            ]} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="cp-lb">크기</span>
+            <KStep value={fontScale} onChange={setFontScale} min={50} max={200} step={5} suffix="%" />
+          </div>
+          {/* 미리보기 — 실제 달 제목과 같은 모양 */}
+          <div className="cal-head" style={{ justifyContent: 'center', margin: 0, padding: '10px 0', border: '1px dashed var(--line)', borderRadius: 9 }}>
+            <b style={titleStyle(fontPick || undefined, fontScale)}>{monthTitle}</b>
+          </div>
+        </div>
+      </Modal>
       {del.element}
     </section>
   );

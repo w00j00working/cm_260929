@@ -293,6 +293,20 @@ export function CharEditForm({ initial, onSave, onCancel, auMode, existingIds }:
             {/* 페이지 주소 (v1.9) — /chars/{slug}, 비우면 자동 · 중복이면 경고.
                 수정에서도 바꿀 수 있다 (v2.0 사용자 요청) — 비우면 원래 주소(id) 그대로.
                 AU 편집에서는 주소가 base 소관이라 숨긴다 */}
+            {/* AU 편집에서는 이 AU 프로필의 주소 (커플홈 사용자 요청 — 「AU 프로필의 주소를 정할 수 없다」):
+                /chars/{캐릭터}?au={여기}. 비우면 자관 AU의 주소 별명(없으면 키)을 그대로 쓴다 */}
+            {auMode && (
+              <div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--faint)', whiteSpace: 'nowrap' }}>?au=</span>
+                  <KInput placeholder="AU 프로필 주소 (선택) — 비우면 자관 AU 주소" value={slug}
+                    onChange={e => setSlug(slugify(e.target.value))} style={{ flex: 1 }} />
+                </div>
+                {slug && slug !== (initial?.slug ?? '') && existingIds?.includes(slug) && (
+                  <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--accent)' }}>이 캐릭터의 다른 AU 프로필이 쓰는 주소입니다</p>
+                )}
+              </div>
+            )}
             {!auMode && (
               <div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

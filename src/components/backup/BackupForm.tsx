@@ -1,14 +1,14 @@
 'use client';
 // 그림백업 작성/수정 공용 폼 (4.11) — 제목/유형/이미지 다중 업로드(원본·최적화·크롭·⠿순서)/설명/설정/접기
 // 수정 모드: 기존 이미지(ref)는 그대로 유지·재정렬·삭제 가능, 새 파일 추가 가능
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLocalList, newId, FoldType } from '@/lib/postStore';
 import { useSectionParam, secStamp, MAIN_SEC, useSectionTitle } from '@/lib/sectionStore';
 import { useMenuSettings, canGalleryWrite } from '@/lib/menuStore';
 import { BackupPost, BACKUP_SEED } from '@/lib/galleryStore';
-import { useBoardSettings, DEFAULT_GALLERY_CATS, galleryCatsOf } from '@/lib/boardStore';
+import { useBoardSettings, galleryCatsOf } from '@/lib/boardStore';
 import { useConfirmDelete } from '@/components/ui/Modal';
 import { Visibility } from '@/lib/charStore';
 import { KInput, KSelect, KRadio, KCheck, KDate } from '@/components/ui/Kit';
@@ -73,18 +73,15 @@ export function BackupForm({ initial }: { initial: BackupPost | null }) {
      기본 섹션 것으로 바뀌어, 원래 고른 분류가 목록에 없으니 첫 항목으로 풀려 버린다. */
   const secId = initial ? (initial.secId ?? MAIN_SEC) : sec.id;
   // 갤러리마다 말머리가 다르다 (v2.0 사용자 요청) — 보고 있는 갤러리 것을 쓴다
-  const secCats = galleryCatsOf(boardSet, secId);
-  const galleryCats = secCats.length ? secCats : DEFAULT_GALLERY_CATS;
+  /* 환경설정에 등록한 말머리만 (커플홈 사용자 제보 — 「고르지도 않았는데 등록한 적 없는 '합작'이 붙는다」).
+     예전에는 목록이 비면 기본 4종(합작·낙서…)으로 채우고 첫 것을 자동으로 골랐다. 이제 비면 「말머리 없음」뿐이고,
+     기본값도 「없음」이다 */
+  const galleryCats = galleryCatsOf(boardSet, secId);
   const [category, setCategory] = useState(initial?.category ?? '');
   // 태그 (v2.0 사용자 요청) — 쉼표로 구분해 입력, 저장할 때 배열로
   const [tagsText, setTagsText] = useState((initial?.tags ?? []).join(', '));
   const parseTags = (v: string) =>
     [...new Set(v.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean))];
-  // 목록이 로드되면 첫 말머리를 기본값으로 (등록 화면)
-  useEffect(() => {
-    if (!category && galleryCats[0]) setCategory(galleryCats[0].label);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [galleryCats.length]);
   const [madeDate, setMadeDate] = useState(initial?.madeDate ?? '');
   const [visibility, setVisibility] = useState<Visibility>(initial?.visibility ?? 'public');
   const [foldType, setFoldType] = useState<FoldType | 'none'>(initial?.fold?.type ?? 'none');
@@ -229,7 +226,12 @@ export function BackupForm({ initial }: { initial: BackupPost | null }) {
               <label className="k-label" style={{ width: 70 }}>말머리</label>
               {/* 말머리 목록은 환경설정 > 게시판 관리에서 관리 (v2.0 — 예전에는 코드에 박혀 있었다) */}
               <KSelect minWidth={120} value={category} onChange={setCategory}
-                options={galleryCats.map(c => ({ value: c.label, label: c.label }))} />
+                options={[
+                  { value: '', label: '말머리 없음' },
+                  ...galleryCats.map(c => ({ value: c.label, label: c.label })),
+                  // 목록에서 지워진 말머리가 붙어 있는 옛 글 — 고르기 전까지는 그대로 보여 준다
+                  ...(category && !galleryCats.some(c => c.label === category) ? [{ value: category, label: `${category} (목록에 없음)` }] : []),
+                ]} />
             </div>
             {/* 태그 (v2.0 사용자 요청) — 목록·카드에 나열되고 검색에 걸린다 */}
             <div className="form-row">

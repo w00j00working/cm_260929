@@ -9,8 +9,9 @@ import {
   CommentRow, COMMENT_KEY, COMMENT_SEED, commentsFor,
 } from '@/lib/postStore';
 import {
-  useBoardSettings, useBoards, badgeFor, boardBadgeStyle, boardHref, MAIN_BOARD_ID, BoardPerm,
+  useBoardSettings, useBoards, badgeFor, boardBadgeStyle, boardHref, MAIN_BOARD_ID,
 } from '@/lib/boardStore';
+import { useMenuSettings, canWriteAt } from '@/lib/menuStore';
 import { SearchBar, Pager } from '@/components/ui/Kit';
 import { CropImg } from '@/components/ui/CropEditor';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
@@ -32,6 +33,7 @@ function BoardInner() {
   const bid = params.get('b') ?? MAIN_BOARD_ID;
   const { boards, loaded: boardsLoaded } = useBoards();
   const board = boards.find(b => b.id === bid) ?? boards[0];
+  const [menuSet] = useMenuSettings();
   const [posts] = useLocalList<Post>('ohome.board.v1', BOARD_SEED);
   // 댓글 수 — 댓글은 글과 따로 저장된다 (v2.0). 옛 글 안에 남아 있던 것도 함께 센다
   const [cmtRows] = useLocalList<CommentRow>(COMMENT_KEY, COMMENT_SEED);
@@ -45,8 +47,6 @@ function BoardInner() {
   const [prevBid, setPrevBid] = useState(bid);
   if (prevBid !== bid) { setPrevBid(bid); setCat('전체'); setQ(''); setPage(1); }
 
-  // 권한 3단계 — mock 단계에선 로그인 전제 (로드뷰 4.10과 동일 규칙)
-  const allow = (p: BoardPerm) => (p === 'admin' ? isAdmin : p === 'member' ? !!user : true);
 
   const visible = useMemo(() => {
     let list = posts.filter(p => (p.boardId ?? MAIN_BOARD_ID) === board.id);
@@ -93,7 +93,8 @@ function BoardInner() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <SearchBar onSearch={v => { setQ(v); setPage(1); }} />
-          {allow(board.permWrite) && !!user && (
+          {/* 글쓰기 권한 — 게시판 설정의 permWrite + 「글쓰기 멤버」로 좁히기 (커플홈) */}
+          {canWriteAt(menuSet, boardHref(board.id), { loggedIn: !!user, isAdmin, id: user?.id }, 'member', board.permWrite) && (
             <button className="btn btn-dark" onClick={() => router.push(`/board/write?b=${board.id}`)}>✎ WRITE</button>
           )}
         </div>

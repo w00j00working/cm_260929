@@ -12,7 +12,7 @@ import { useBlobUrl } from '@/lib/blobStore';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { PageTitle } from '@/components/ui/PageText';
 import { Lightbox } from '@/components/ui/Lightbox';
-import { useBoardSettings, boardBadgeStyle } from '@/lib/boardStore';
+import { useBoardSettings, boardBadgeStyle, galleryCatsOf } from '@/lib/boardStore';
 
 export default function BackupDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -64,15 +64,14 @@ export default function BackupDetailPage() {
       style={natural ? { width: '100%', height: '100%' } : { aspectRatio: ratio ?? '16/10' }}><span>IMAGE</span></div>;
   };
 
+  // 말머리 뱃지 — 이 갤러리(섹션)의 말머리 색으로. 말머리는 이름(label)으로 저장돼 있다
+  const cat = galleryCatsOf(boardSet, p.secId ?? MAIN_SEC).find(c => c.label === p.category);
+
   return (
     <section className="page">
+      {/* 큰 제목 아래의 「말머리 · 작성자 · 날짜」 줄은 뺐다 (커플홈 사용자 요청) — 전부 카드 안으로 */}
       <div className="page-head">
         <PageTitle href={tt.href}>{tt.title}</PageTitle>
-        <p>
-          {p.category} · {p.author} · {fmtDate(p.date)}{p.madeDate ? ` · 제작 ${p.madeDate}` : ''}
-          {/* 태그 (v2.0 사용자 요청) — 목록과 같은 표기 */}
-          {(p.tags ?? []).map(t => <i key={t} className="tag-in">#{t}</i>)}
-        </p>
         <div className="head-actions">
           {canManage && <button className="btn btn-dark" onClick={() => router.push(`/gallery/${p.id}/edit`)}>EDIT</button>}
           {canManage && <button className="btn btn-dark" onClick={() => setDelAsk(true)}>DELETE</button>}
@@ -81,17 +80,19 @@ export default function BackupDetailPage() {
 
       {/* 본문만 폭 제한 — 헤더는 풀폭 위치 유지 */}
       <div className="panel" style={{ padding: 20, maxWidth: 960, margin: '0 auto' }}>
-        {/* 제목·뱃지 세로 중앙 정렬 + 아래 여백 확보 */}
-        <h2 style={{ fontSize: 18, marginBottom: p.desc ? 8 : 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* 제목 + 말머리 뱃지 (유형 「단일」 대신 — 커플홈 사용자 요청) */}
+        <h2 style={{ fontSize: 18, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {p.title}
-          <span style={boardBadgeStyle(boardSet.gallery.find(b => b.id === p.type))}>
-            {boardSet.gallery.find(b => b.id === p.type)?.label}
+          {p.category && <span style={boardBadgeStyle(cat)}>{p.category}</span>}
+          {/* 작성자 · 날짜 · 태그 — 제목 줄의 오른쪽 끝에 (커플홈 사용자 요청) */}
+          <span style={{
+            marginLeft: 'auto', fontSize: 'calc(11.5px*var(--fs,1))', fontWeight: 400, letterSpacing: 0,
+            color: 'var(--faint)', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>
+            {p.author} · {fmtDate(p.date)}{p.madeDate ? ` · 제작 ${p.madeDate}` : ''}
+            {(p.tags ?? []).map(t => <i key={t} className="tag-in">#{t}</i>)}
           </span>
         </h2>
-        {p.desc && (
-          <div className="post-body" style={{ fontSize: 12.5, margin: '0 0 16px' }}
-            dangerouslySetInnerHTML={{ __html: sanitizeHtml(p.desc) }} />
-        )}
 
         {p.type === 'log' ? (
           /* 로그형 — 웹툰식 세로 스크롤 · 이미지 사이 틈 없이 이어 붙임 (만화 연결) */
@@ -140,6 +141,11 @@ export default function BackupDetailPage() {
               </div>
             )}
           </>
+        )}
+        {/* 적어 둔 글은 이미지 아래에 (커플홈 사용자 요청) */}
+        {p.desc && (
+          <div className="post-body" style={{ fontSize: 12.5, margin: '16px 0 0' }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(p.desc) }} />
         )}
       </div>
 

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLocalList } from '@/lib/postStore';
 import { useSectionTitle } from '@/lib/sectionStore';
-import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED } from '@/lib/diaryStore';
+import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, useDiarySettings } from '@/lib/diaryStore';
 import { DiaryForm } from '@/components/diary/DiaryForm';
 import { useToast } from '@/components/ui/Toast';
 import { PageTitle } from '@/components/ui/PageText';
@@ -19,6 +19,7 @@ export default function DiaryEditPage() {
   // 큰 글씨 — 추가 섹션 항목이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
   const tt = useSectionTitle('diary', posts.find(x => x.id === id)?.secId, 'EDIT DIARY');
   const [moods] = useLocalList<Mood>('ohome.moods.v1', MOOD_SEED);
+  const [dset] = useDiarySettings();   // 구분 탭 (v2.1)
   const p = posts.find(x => x.id === id);
 
   if (!loaded) return <section className="page" />;
@@ -34,12 +35,12 @@ export default function DiaryEditPage() {
   return (
     <section className="page">
       <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>{p.title}</p></div>
-      <DiaryForm initial={p} moods={moods}
-        onCancel={() => router.push('/diary')}
+      <DiaryForm initial={p} moods={moods} cats={dset.cats}
+        onCancel={() => router.push(tt.href)}
         onSave={v => {
           setPosts(posts.map(x => (x.id === p.id ? { ...x, ...v } : x)));
           toast('저장되었습니다');
-          router.push('/diary');
+          router.push(tt.href);   // 추가 다이어리의 일기면 그 목록으로 (v2.1)
         }} />
     </section>
   );

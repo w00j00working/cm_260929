@@ -4,15 +4,18 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { useSectionParam, filterSection, sectionSetter } from '@/lib/sectionStore';
+import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
 import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useLocalList } from '@/lib/postStore';
-import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint } from '@/lib/diaryStore';
+import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint, useDiarySettings, parseDiaryLink, diaryOrder } from '@/lib/diaryStore';
+import { Character, CHAR_SEED, Relation, REL_SEED, charWithAu, hasRelGrant, charPath } from '@/lib/charStore';
+import { useMembers } from '@/lib/members';
 import { renderBody } from '@/lib/sanitize';
 import { SearchBar, Pager } from '@/components/ui/Kit';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { BlobImg } from '@/lib/blobStore';
+import { CroppedBlobImg } from '@/components/ui/CropEditor';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 
 const PAGE_SIZE = 10;
@@ -62,6 +65,30 @@ function DiaryPageInner() {
   const [menuSet] = useMenuSettings();
   const canWrite = canWriteAt(menuSet, writeKeyOf('/diary', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/diary'));
   const canEdit = (p: DiaryPost) => isAdmin || (!!user && p.authorId === user.id);
+  /* 구분 탭 (v2.1 사용자 요청 — 「탭을 여러 개 만들 수 있는 형식」, 환경설정 > 다이어리에서 관리).
+     「전체」 탭은 없다 — 처음 화면은 맨 위 구분. 구분이 하나도 없으면 탭 없이 전부, 구분 없는 일기는 「구분 없음」 탭(있을 때만).
+     탭마다 자관이나 AU를 연동할 수 있다 — 연동한 탭은 그 자관/AU의 일기(탭 머리에 그 모습의 캐릭터), 아니면 오너의 일기 */
+  const [dset, , dsetLoaded] = useDiarySettings();
+  const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
+  const [chars] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
+  const members = useMembers();
+  const [fCat, setFCat] = useState<string | null>(null);   // null = 아직 안 고름 → 맨 위 구분
+  const effCat = dset.cats.length === 0 ? 'all'
+    : fCat === 'none' || (fCat && dset.cats.some(c => c.id === fCat)) ? fCat : dset.cats[0].id;
+  const curCat = dset.cats.find(c => c.id === effCat);
+  const link = parseDiaryLink(curCat?.link);
+  const linkRel = link ? rels.find(r => r.id === link.relId) : undefined;
+  const linkAu = linkRel && link && link.auId !== 'base' ? linkRel.aus.find(a => a.id === link.auId) : undefined;
+  const linkKey = linkRel && linkAu ? `${linkRel.id}:${linkAu.id}` : null;
+  // 탭 머리에 보일 캐릭터들 — 연동한 자관의 멤버, AU를 연동했으면 그 AU 모습(이름·사진·색)으로
+  const linkChars = linkRel
+    ? linkRel.members.map(m => chars.find(c => c.id === m.charId)).filter((c): c is Character => !!c)
+      .map(c => (linkKey ? charWithAu(c, linkKey) : c))
+    : [];
+  // 연동한 자관의 캐릭터에 권한을 받은 회원은 권한 설정과 무관하게 그 탭에 쓴다 — 두 사람이 같이 쓰는 일기
+  const canWriteHere = canWrite || (!!user && !!linkRel && hasRelGrant(linkRel.members, chars, user.id));
+  const ownerName = members.find(m => m.role === 'admin')?.nickname;
+  const nickOf = (id?: string) => (id ? members.find(m => m.id === id)?.nickname : undefined);
   const [open, setOpen] = useState<string | null>(null);
   const [fMood, setFMood] = useState('all');
   const [q, setQ] = useState('');
@@ -73,11 +100,18 @@ function DiaryPageInner() {
   const [view, setView] = useState<{ y: number; m: number }>({ y: now.getFullYear(), m: now.getMonth() });
   const [monthFilter, setMonthFilter] = useState(false);
 
-  // 메인 위젯에서 특정 일기로 진입 — /diary#id (4.14)
+  // 메인 위젯에서 특정 일기로 진입 — /diary#id (4.14). 구분 탭도 그 일기 쪽으로 (v2.1)
   useEffect(() => {
+    if (!loaded || !dsetLoaded) return;
     const h = window.location.hash.slice(1);
-    if (h) setOpen(h);
-  }, [loaded]);
+    if (!h) return;
+    setOpen(h);
+    const p = posts.find(x => x.id === h);
+    if (p && dset.cats.length) setFCat(p.catId && dset.cats.some(c => c.id === p.catId) ? p.catId : 'none');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, dsetLoaded]);
+  // 구분 탭을 바꾸면 첫 장부터
+  useEffect(() => { setPage(1); }, [effCat]);
 
   if (!loaded) return <section className="page" />;
 
@@ -86,10 +120,20 @@ function DiaryPageInner() {
   const canSee = (p: DiaryPost) => isAdmin || (p.visibility === 'public' || (p.visibility === 'member' && !!user));
   const visible = posts
     .filter(canSee)
+    .filter(p => effCat === 'all' || (effCat === 'none' ? !p.catId : p.catId === effCat))   // 구분 탭 (v2.1)
     .filter(p => fMood === 'all' || p.moodId === fMood)
     .filter(p => !query || p.title.toLowerCase().includes(query))
     .filter(p => !monthFilter || p.date.startsWith(monthKey))
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort(diaryOrder);
+  // 「구분 없음」 탭 — 구분 없는 일기가 있을 때만 (v2.1)
+  const noneCount = posts.filter(canSee).filter(p => !p.catId).length;
+  // 쓰기 — 지금 보고 있는 다이어리·구분 탭을 골라 둔 채로 연다 (v2.1)
+  const writeHref = () => {
+    const qs = new URLSearchParams(secQuery('diary', sec.id).slice(1));
+    if (effCat !== 'all' && effCat !== 'none') qs.set('cat', effCat);
+    const s = qs.toString();
+    return `/diary/write${s ? `?${s}` : ''}`;
+  };
 
   // 캘린더 표시용 — 보이는 달의 일기 (일 → 글 목록)
   const byDay = new Map<number, DiaryPost[]>();
@@ -117,6 +161,44 @@ function DiaryPageInner() {
         <EditableDesc k="diary-desc" def="무드 일기 — 클릭하면 그 자리에서 펼쳐집니다" />
       </div>
 
+      {/* 구분 탭 (v2.1 사용자 요청) — 환경설정 > 다이어리에서 만든 탭 · 「전체」 없이 맨 위 구분이 처음 화면.
+          탭 머리: 연동한 자관/AU의 캐릭터(얼굴·이름), 연동하지 않았으면 오너 */}
+      {dset.cats.length > 0 && (
+        <>
+          <div className="seg" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
+            {dset.cats.map(c => (
+              <button key={c.id} className={effCat === c.id ? 'on' : ''} onClick={() => setFCat(c.id)}>{c.name}</button>
+            ))}
+            {noneCount > 0 && (
+              <button className={effCat === 'none' ? 'on' : ''} onClick={() => setFCat('none')}>구분 없음</button>
+            )}
+          </div>
+          {effCat !== 'none' && (
+            <div className="panel dy-tabhd">
+              {linkRel ? (
+                <>
+                  {linkChars.map(c => (
+                    <span key={c.id} className="cf" style={{ background: c.color || 'var(--line)' }} data-tip={`${c.name} 프로필`}
+                      onClick={() => router.push(linkKey ? `${charPath(c)}?au=${encodeURIComponent(linkKey)}` : charPath(c))}>
+                      {c.thumbId && <CroppedBlobImg fileRef={c.thumbId} crop={c.thumbCrop} />}
+                    </span>
+                  ))}
+                  <div className="nm">
+                    <b>{linkAu?.name?.trim() || linkRel.name}{linkAu ? ` · ${linkAu.label}` : ''}</b>
+                    <small>{linkChars.map(c => c.name).join(' · ') || '멤버 캐릭터 없음'}</small>
+                  </div>
+                </>
+              ) : (
+                <div className="nm">
+                  <b>OWNER</b>
+                  <small>{ownerName ? `${ownerName}의 일기` : '오너의 일기'}</small>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {/* 무드 필터 + 달 필터 표시 + 검색·WRITE — 필터 줄 오른쪽 정렬 (v1.9 사용자 요청).
           그리드 밖(풀폭): 캘린더가 일기 패널과 같은 높이에서 시작 */}
       <div className="toolrow" style={{ marginBottom: 16 }}>
@@ -138,7 +220,7 @@ function DiaryPageInner() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <SearchBar placeholder="제목 검색" onSearch={v => { setQ(v); setPage(1); }} />
-          {canWrite && <button className="btn btn-dark" onClick={() => router.push('/diary/write')}>＋ WRITE</button>}
+          {canWriteHere && <button className="btn btn-dark" onClick={() => router.push(writeHref())}>＋ WRITE</button>}
         </div>
       </div>
 
@@ -158,6 +240,8 @@ function DiaryPageInner() {
                 {p.visibility !== 'public' && (
                   <span className="pill" style={{ flexShrink: 0 }}>{p.visibility === 'member' ? '멤버' : '비공개'}</span>
                 )}
+                {/* 연동한 탭에서는 누가 썼는지 (v2.1 — 두 사람이 같이 쓰므로) */}
+                {linkRel && nickOf(p.authorId) && <small className="au">{nickOf(p.authorId)}</small>}
                 <small className="dt">{p.date.replace(/-/g, '.')}{m ? ` · ${m.name}` : ''}</small>
                 <span className={`arr ${opened ? 'up' : ''}`} />
               </div>

@@ -1,7 +1,7 @@
 ﻿'use client';
-// 일기 작성/수정 공용 폼 (4.14) — 제목 · 날짜 · 무드 · 내용(MD) · 이미지 · 공개범위
+// 일기 작성/수정 공용 폼 (4.14) — 제목 · 날짜 · 무드 · 내용(MD) · 이미지 · 공개범위 · 구분 탭 (v2.1)
 import React, { useState } from 'react';
-import { DiaryPost, Mood, moodTint } from '@/lib/diaryStore';
+import { DiaryPost, DiaryCat, Mood, moodTint } from '@/lib/diaryStore';
 import { Visibility } from '@/lib/charStore';
 import { newId } from '@/lib/postStore';
 import { KInput, KTextarea, KSelect, KDate } from '@/components/ui/Kit';
@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/Toast';
 export interface DiaryFormValue {
   title: string; date: string; moodId: string; body: string;
   imgIds: string[]; visibility: Visibility;
+  catId?: string;    // 구분 탭 (v2.1) — 없으면 구분 없음
 }
 
 interface ImgItem { id: string; ref?: string; url?: string; file?: File }
@@ -24,14 +25,20 @@ function ImgThumb({ item }: { item: ImgItem }) {
   return src ? <img src={src} alt="" style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6 }} /> : null;
 }
 
-export function DiaryForm({ initial, moods, onSave, onCancel }: {
+export function DiaryForm({ initial, moods, cats = [], initialCatId, onSave, onCancel }: {
   initial: DiaryPost | null;
   moods: Mood[];
+  /** 고를 수 있는 구분 탭 (v2.1) — 비어 있으면 구분 선택 줄을 그리지 않는다 */
+  cats?: DiaryCat[];
+  /** 새 일기에서 먼저 골라 둘 구분 — 보고 있던 구분 탭 (v2.1) */
+  initialCatId?: string;
   onSave: (v: DiaryFormValue) => void;
   onCancel: () => void;
 }) {
   const toast = useToast();
   const isNew = !initial;
+  const [catId, setCatId] = useState<string>(
+    initial?.catId ?? (initialCatId && cats.some(c => c.id === initialCatId) ? initialCatId : cats[0]?.id ?? ''));
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const [title, setTitle] = useState(initial?.title ?? '');
@@ -46,7 +53,10 @@ export function DiaryForm({ initial, moods, onSave, onCancel }: {
     if (!title.trim()) { toast('제목을 입력해 주세요'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('날짜를 YYYY-MM-DD 형식으로 입력해 주세요'); return; }
     const imgIds = await Promise.all(imgs.map(i => (i.file ? putBlob(i.file) : Promise.resolve(i.ref!))));
-    onSave({ title: title.trim(), date, moodId, body, imgIds, visibility });
+    onSave({
+      title: title.trim(), date, moodId, body, imgIds, visibility,
+      catId: catId && cats.some(c => c.id === catId) ? catId : undefined,   // 목록에 없는 옛 구분은 버린다
+    });
   };
 
   return (
@@ -102,6 +112,14 @@ export function DiaryForm({ initial, moods, onSave, onCancel }: {
       </div>
 
       <div>
+        {/* 구분 탭 (v2.1 사용자 요청) — 환경설정 > 다이어리에서 만든 탭 중 하나. 탭이 없는 홈에는 줄 자체가 없다 */}
+        {cats.length > 0 && (
+          <div className="panel widget" style={{ marginBottom: 14 }}>
+            <h4>구분</h4>
+            <KSelect value={catId} onChange={setCatId}
+              options={[{ value: '', label: '구분 없음' }, ...cats.map(c => ({ value: c.id, label: c.name }))]} />
+          </div>
+        )}
         <div className="panel widget" style={{ marginBottom: 14 }}>
           <h4>공개범위</h4>
           <KSelect value={visibility} onChange={v => setVisibility(v as Visibility)}

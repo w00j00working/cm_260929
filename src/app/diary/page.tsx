@@ -5,6 +5,7 @@ import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter } from '@/lib/sectionStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useLocalList } from '@/lib/postStore';
 import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint } from '@/lib/diaryStore';
 import { renderBody } from '@/lib/sanitize';
@@ -57,6 +58,10 @@ function DiaryPageInner() {
   // 저장은 이 섹션 자리만 교체 — 걸러진 목록을 그대로 넘겨도 다른 섹션이 지워지지 않는다
   const setPosts = sectionSetter(postsAll, sec.id, setPostsAll);
   const [moods] = useLocalList<Mood>('ohome.moods.v1', MOOD_SEED);
+  // 글쓰기 권한 (v2.1) — 환경설정 「권한」에서 다이어리마다 (기본: 관리자) · 수정·삭제는 쓴 본인과 관리자
+  const [menuSet] = useMenuSettings();
+  const canWrite = canWriteAt(menuSet, writeKeyOf('/diary', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/diary'));
+  const canEdit = (p: DiaryPost) => isAdmin || (!!user && p.authorId === user.id);
   const [open, setOpen] = useState<string | null>(null);
   const [fMood, setFMood] = useState('all');
   const [q, setQ] = useState('');
@@ -133,7 +138,7 @@ function DiaryPageInner() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <SearchBar placeholder="제목 검색" onSearch={v => { setQ(v); setPage(1); }} />
-          {isAdmin && <button className="btn btn-dark" onClick={() => router.push('/diary/write')}>＋ WRITE</button>}
+          {canWrite && <button className="btn btn-dark" onClick={() => router.push('/diary/write')}>＋ WRITE</button>}
         </div>
       </div>
 
@@ -160,7 +165,7 @@ function DiaryPageInner() {
               <div className="dy-fold" aria-hidden={!opened}>
                 <div className="dy-fold-in">
                   <DiaryBody p={p} onOpen={(ids, idx) => setLb({ srcs: ids, idx })} />
-                  {isAdmin && (
+                  {canEdit(p) && (
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', padding: '0 0 14px' }}>
                       <button className="btn btn-ghost" style={{ padding: '4px 11px', fontSize: 10.5 }}
                         onClick={() => router.push(`/diary/${p.id}/edit`)}>EDIT</button>

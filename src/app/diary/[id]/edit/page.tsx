@@ -13,7 +13,7 @@ import { PageTitle } from '@/components/ui/PageText';
 export default function DiaryEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [posts, setPosts, loaded] = useLocalList<DiaryPost>('ohome.diary.v1', DIARY_SEED);
   // 큰 글씨 — 추가 섹션 항목이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
@@ -22,7 +22,8 @@ export default function DiaryEditPage() {
   const p = posts.find(x => x.id === id);
 
   if (!loaded) return <section className="page" />;
-  if (!isAdmin || !p) {
+  // 수정은 쓴 본인과 관리자 (v2.1)
+  if (!p || !(isAdmin || (!!user && p.authorId === user.id))) {
     return (
       <section className="page">
         <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>일기를 찾을 수 없거나 권한이 없습니다</p></div>

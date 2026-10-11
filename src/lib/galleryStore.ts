@@ -221,6 +221,8 @@ export interface DotoriItem {
   thumbCrop?: CropValue;
   ph: string;                // 이미지 없을 때 플레이스홀더
   date: string;              // 등록일 ISO (정렬용)
+  /** 등록한 회원 (v2.1 — 일반 회원도 등록할 수 있게 되면서) · 수정·삭제는 본인과 관리자 */
+  authorId?: string;
 }
 
 export const DOTORI_SEED: DotoriItem[] = [];
@@ -229,6 +231,8 @@ export const DOTORI_SEED: DotoriItem[] = [];
 export interface PlayRecord {
   /** 소속 섹션 (v2.0) — 여러 개로 만들었을 때. 없으면 기본 섹션 */
   secId?: string;
+  /** 등록한 회원 (v2.1 — 일반 회원도 등록할 수 있게 되면서) · 수정·삭제는 본인과 관리자 */
+  authorId?: string;
   id: string;
   date?: string;             // Date (optional — 비우면 표 맨 아래)
   scenario: string;          // Scenario (필수)

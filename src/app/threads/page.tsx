@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter, secQuery, sectionHref } from '@/lib/sectionStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import {
   useLocalList, newId, fmtDate, Comment,
   CommentRow, COMMENT_KEY, COMMENT_SEED, commentsFor,
@@ -83,6 +84,11 @@ function ThreadsPageInner() {
   const works = filterSection(worksAll, sec.id);
   // 저장은 이 섹션 자리만 교체 — 걸러진 목록을 그대로 넘겨도 다른 섹션이 지워지지 않는다
   const setWorks = sectionSetter(worksAll, sec.id, setWorksAll);
+  /* 글쓰기 권한 (v2.1) — 환경설정 「권한」에서 타래 게시판마다 (기본: 관리자) · 멤버 선택으로 좁힐 수 있다.
+     허용된 회원은 새 타래를 시작하고, 타래 정보 수정·이어쓰기·삭제는 그 타래를 시작한 본인과 관리자 */
+  const [menuSet] = useMenuSettings();
+  const canWrite = canWriteAt(menuSet, writeKeyOf('/threads', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/threads'));
+  const canManage = (w: ThreadWork) => isAdmin || (!!user && w.createdBy === user.id);
   const [settings, , setLoaded] = useThreadSettings();
   // 분류는 섹션마다 따로 (v2.0 사용자 요청) — 정한 적 없으면 기본 섹션 것
   const cats = threadCats(settings, sec.id);
@@ -282,7 +288,7 @@ function ThreadsPageInner() {
             <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>리스트</button>
           </div>
           <SearchBar onSearch={setQ} />
-          {isAdmin && (
+          {canWrite && (
             <button className="btn btn-dark" style={{ whiteSpace: 'nowrap' }}
               onClick={() => router.push('/threads/new' + secQuery('threads', sec.id))}>＋ NEW THREAD</button>
           )}
@@ -300,7 +306,7 @@ function ThreadsPageInner() {
             <div key={w.id} className="panel thr-card"
               onClick={() => { setSelId(w.id); setView('thread'); }}
               /* 우클릭 → 메뉴 → 삭제 확인 모달 (v2.0 사용자 요청) — 리스트 보기에는 삭제 버튼이 없었다 */
-              onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); setWCtx({ x: e.clientX, y: e.clientY, id: w.id }); }}>
+              onContextMenu={e => { if (!canManage(w)) return; e.preventDefault(); setWCtx({ x: e.clientX, y: e.clientY, id: w.id }); }}>
               <div className="th">
                 <CroppedBlobImg fileRef={w.posterId} crop={w.posterCrop} ph={w.ph} />
                 <span className="pill dark" style={threadBadgeStyle(cats.find(c => c.id === w.catId))}>
@@ -342,7 +348,7 @@ function ThreadsPageInner() {
                       타래 시작 {fmtMD(sel.created)} · 글 {sel.posts.length}
                       {sel.visibility !== 'public' && ` · ${sel.visibility === 'member' ? '멤버공개' : '나만보기'}`}
                     </small>
-                    {isAdmin && (
+                    {canManage(sel) && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                         <button className="btn btn-ghost" style={{ padding: '3px 10px', fontSize: 10.5 }}
                           onClick={() => router.push(`/threads/${sel.id}/edit`)}>EDIT</button>
@@ -374,7 +380,7 @@ function ThreadsPageInner() {
                           </>
                         )}
                         <div className="tm">{fmtMDHM(p.date)}</div>
-                        {isAdmin && (
+                        {canManage(sel) && (
                           <div className="hv-actions">
                             <button onClick={() => openEdit(p)}>EDIT</button>
                             <button className="del" onClick={() => removePost(p.id)}>DELETE</button>
@@ -387,8 +393,8 @@ function ThreadsPageInner() {
                     <p style={{ fontSize: 12.5, color: 'var(--faint)', paddingBottom: 18 }}>아직 글이 없습니다</p>
                   )}
                 </div>
-                {/* 이어쓰기 컴포저 (트위터식, 관리자) */}
-                {isAdmin && (
+                {/* 이어쓰기 컴포저 (트위터식) — 타래를 시작한 본인과 관리자 (v2.1) */}
+                {canManage(sel) && (
                   <div className="thr-write">
                     <textarea placeholder="타래 이어쓰기…" value={text} onChange={e => setText(e.target.value)} />
                     {urls.length > 0 && (
@@ -465,7 +471,7 @@ function ThreadsPageInner() {
             {visible.map(w => (
               <div key={w.id} className={`thr-item ${sel?.id === w.id ? 'on' : ''}`} onClick={() => setSelId(w.id)}
                 /* 우클릭 → 메뉴 → 삭제 확인 모달 (v2.0 사용자 요청) — 타래 보기의 오른쪽 카드에서도 */
-                onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); setWCtx({ x: e.clientX, y: e.clientY, id: w.id }); }}>
+                onContextMenu={e => { if (!canManage(w)) return; e.preventDefault(); setWCtx({ x: e.clientX, y: e.clientY, id: w.id }); }}>
                 <div className="th">
                   <CroppedBlobImg fileRef={w.posterId} crop={w.posterCrop} ph={w.ph} />
                 </div>

@@ -3,6 +3,7 @@
 import React, { Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useSectionParam, secStamp, secQuery , useSectionTitle } from '@/lib/sectionStore';
 import { useLocalList, newId } from '@/lib/postStore';
 import { DotoriItem, DOTORI_SEED } from '@/lib/galleryStore';
@@ -16,14 +17,17 @@ function DotoriNewPageInner() {
   // 큰 글씨 — 추가 섹션이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
   const tt = useSectionTitle('dotori', sec.id, 'ADD DOTORI');
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [items, setItems] = useLocalList<DotoriItem>('ohome.dotori.v1', DOTORI_SEED);
+  // 등록 권한 (v2.1) — 환경설정 「권한」에서 (기본: 관리자) · ADD 버튼과 같은 판정으로 주소 직접 진입도 막는다
+  const [menuSet, , menuLoaded] = useMenuSettings();
 
-  if (!isAdmin) {
+  if (!menuLoaded) return <section className="page" />;
+  if (!user || !canWriteAt(menuSet, writeKeyOf('/dotori', sec.id), { loggedIn: true, isAdmin, id: user.id }, writeDefaultOf('/dotori'))) {
     return (
       <section className="page">
-        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>관리자 전용 페이지</p></div>
+        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>허용된 회원만 등록할 수 있습니다</p></div>
       </section>
     );
   }
@@ -36,6 +40,7 @@ function DotoriNewPageInner() {
         onSave={v => {
           const it: DotoriItem = {
             id: newId(), ...v, link: v.link, ph: 'cool', date: new Date().toISOString(),
+            authorId: user.id,   // 등록한 사람을 남긴다 (v2.1) — 수정·삭제는 본인과 관리자
           };
           setItems([{ ...it, ...secStamp(sec.id) }, ...items]);
           toast('도토리가 등록되었습니다');

@@ -15,6 +15,7 @@ import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 import { useMainStore } from '@/lib/mainStore';
 import { useCardSort, mergeOrder } from '@/lib/cardSort';
 import { useMenuSettings, canGalleryWrite } from '@/lib/menuStore';
+import { useBoardSettings, galleryCatsOf } from '@/lib/boardStore';
 
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
@@ -36,6 +37,10 @@ function BackupPageInner() {
     if (menuLoaded && !viewInit) { setView(menuSet.backupView); setViewInit(true); }
   }, [menuLoaded, viewInit, menuSet.backupView]);
   const [q, setQ] = useState('');
+  // 말머리 탭 (v2.1 사용자 요청) — 환경설정 > 게시판 관리에서 이 갤러리에 정해 둔 말머리별로 ALL / 말머리…
+  const { st: boardSet } = useBoardSettings();
+  const cats = galleryCatsOf(boardSet, sec.id);
+  const [cat, setCat] = useState('');   // '' = ALL
   const [unveiled, setUnveiled] = useState<Record<string, boolean>>({});
   /* 우클릭 → 썸네일 수정 (v2.0 사용자 요청) — 리스트에서 바로 대표 이미지 크롭을 고친다.
      수정 화면까지 안 가도 되게. 관리자와 글쓴이만, 이미지가 있는 글만 */
@@ -56,6 +61,7 @@ function BackupPageInner() {
 
   const visible = posts
     .filter(p => isAdmin || p.visibility === 'public' || (p.visibility === 'member' && user))
+    .filter(p => !cat || p.category === cat)   // 말머리 탭 — ALL이면 전부
     .filter(p => !q || p.title.includes(q) || p.category.includes(q)
       || (p.tags ?? []).some(t => t.toLowerCase().includes(q.toLowerCase())));   // 태그 검색 (v2.0)
 
@@ -70,7 +76,7 @@ function BackupPageInner() {
   const cur = Math.min(page, pages);      // 검색·보기 전환으로 줄면 마지막 장으로 당긴다
   const start = (cur - 1) * PER;
   const paged = visible.slice(start, start + PER);
-  useEffect(() => { setPage(1); }, [q, view]);   // 검색어·보기를 바꾸면 첫 장부터
+  useEffect(() => { setPage(1); }, [q, view, cat]);   // 검색어·보기·말머리를 바꾸면 첫 장부터
 
   const count = (p: BackupPost) => Math.max(p.images.length, p.phList.length);
   const meta = (p: BackupPost) =>
@@ -83,11 +89,19 @@ function BackupPageInner() {
         <EditableDesc k="backup-desc" def="로그형(웹툰 스크롤) / 단일형(좌우 넘김) · 리스트/갤러리 보기 전환" />
       </div>
       <div className="toolrow">
+        {/* 왼쪽: 말머리 탭 ALL / 말머리… (v2.1 사용자 요청 — 말머리별로 모아보기) — 말머리를 하나도 안 정해 둔 갤러리는 ALL만 */}
         <div className="seg">
-          <button className={view === 'gal' ? 'on' : ''} onClick={() => setView('gal')}>갤러리</button>
-          <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>리스트</button>
+          <button className={cat === '' ? 'on' : ''} onClick={() => setCat('')}>ALL</button>
+          {cats.map(c => (
+            <button key={c.id} className={cat === c.label ? 'on' : ''} onClick={() => setCat(c.label)}>{c.label}</button>
+          ))}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* 오른쪽: 갤러리/리스트 보기 전환 · 검색 · 글쓰기 */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="seg">
+            <button className={view === 'gal' ? 'on' : ''} onClick={() => setView('gal')}>갤러리</button>
+            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>리스트</button>
+          </div>
           <SearchBar onSearch={setQ} />
           {/* 글쓰기 권한 (v2.0 사용자 요청) — 메뉴 관리에서 갤러리별로 · 멤버 선택으로 좁힐 수 있다 */}
           {canGalleryWrite(menuSet, sec.id, { loggedIn: !!user, isAdmin, id: user?.id }) && (

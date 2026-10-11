@@ -5,9 +5,10 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLocalList } from '@/lib/postStore';
-import { Character, CHAR_SEED, charPath } from '@/lib/charStore';
+import { Character, CHAR_SEED, charPath, charGrant } from '@/lib/charStore';
 import { backend, isServerMode } from '@/lib/backend';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { SearchBar, FitText } from '@/components/ui/Kit';
 import { CroppedBlobImg } from '@/components/ui/CropEditor';
 
@@ -18,9 +19,11 @@ import { useCardSort, mergeOrder } from '@/lib/cardSort';
 
 function CharsInner() {
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const { editOn } = useMainStore();
+  // 등록 권한 (v2.1) — 환경설정 「권한」에서 (기본: 관리자) · 회원이 등록한 캐릭터는 그 회원에게 편집 권한이 붙는다
+  const [menuSet] = useMenuSettings();
   const [charsAll, setCharsAll] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   // 여러 개로 만든 캐릭터 목록 (v2.0 사용자 요청) — 주소의 ?s= 가 가리키는 것만
   const sec = useSectionParam('chars');
@@ -47,7 +50,8 @@ function CharsInner() {
 
   const visible = chars
     .filter(c => c.own)
-    .filter(c => isAdmin || c.visibility === 'public')
+    // 회원이 등록한(권한 있는) 캐릭터는 비공개여도 본인에게는 보인다 (v2.1)
+    .filter(c => isAdmin || c.visibility === 'public' || (!!user && !!charGrant(c, user.id)))
     .filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()) || c.sub.includes(q));
 
   // 편집모드 카드 드래그 정렬 (v1.9)
@@ -60,7 +64,9 @@ function CharsInner() {
         <EditableDesc k="chars-desc" def="운영자의 자캐 목록 · 3:4 두상 썸네일 · 클릭 시 프로필로 이동" />
         <div className="head-actions">
           <SearchBar onSearch={setQ} />
-          {isAdmin && <button className="btn btn-dark" onClick={() => router.push('/chars/new' + secQuery('chars', sec.id))}>＋ ADD CHARACTER</button>}
+          {canWriteAt(menuSet, writeKeyOf('/chars', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/chars')) && (
+            <button className="btn btn-dark" onClick={() => router.push('/chars/new' + secQuery('chars', sec.id))}>＋ ADD CHARACTER</button>
+          )}
         </div>
       </div>
       <div className="g5 chars-grid">

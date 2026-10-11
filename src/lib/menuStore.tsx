@@ -38,6 +38,13 @@ export interface MenuSettings {
   galWrite?: Record<string, MenuPerm>;
   /** 갤러리 글쓰기를 특정 회원으로 좁히기 (v2.0) — 'member'일 때만 의미 · 비우면 모든 회원 */
   galWriteMembers?: Record<string, string[]>;
+  /** 게시판별 글쓰기 권한 (v2.1 사용자 요청 — 갤러리처럼 모든 게시판에). 키는 writeKeyOf()가 만드는 주소
+   *  (`/threads`, `/threads?s=<섹션 id>`, `/chars`, `/tchars`, `/dotori`, `/playlog`, `/diary`, `/loadb?s=<id>` …).
+   *  미지정은 게시판마다의 기본값(writeDefaultOf — 지금까지 관리자만 쓰던 곳은 관리자, 나머지는 가입자).
+   *  리스트(/board)는 게시판 설정의 permWrite, 로드비 기본 페이지는 roadUpload가 그대로 값이다 */
+  writePerm?: Record<string, MenuPerm>;
+  /** 글쓰기를 특정 회원으로 좁히기 (v2.1) — 'member'일 때만 의미 · 비우면 로그인한 모든 회원 */
+  writeMembers?: Record<string, string[]>;
   calTitle: 'en' | 'num';            // 스케줄러 달 표기 (v1.9) — AUGUST 2026 / 2026.08
   imgProtect: ImgProtectArea[];      // 이미지 저장 방지 영역 (v1.9 — 우클릭·드래그 차단, 관리자 제외)
 }
@@ -301,6 +308,34 @@ export function canGalleryWrite(s: MenuSettings, secId: string, viewer: MenuView
   if (viewer.isAdmin) return true;
   if ((s.galWrite?.[secId] ?? 'member') === 'admin') return false;
   const members = s.galWriteMembers?.[secId];
+  return !members?.length || (!!viewer.id && members.includes(viewer.id));
+}
+
+/** 글쓰기 권한 저장 키 (v2.1) — 기본 섹션은 페이지 주소 그대로, 추가 섹션은 `?s=<id>`
+ *  (메뉴 주소에 적힌 별명이 아니라 id로 통일 — 별명은 바뀔 수 있다) */
+export const writeKeyOf = (href: string, secId?: string) =>
+  (!secId || secId === 'main' ? href : `${href}?s=${secId}`);
+
+/** 게시판마다의 기본 글쓰기 권한 (v2.1) — 지금까지 관리자만 쓰던 곳은 그대로 관리자, 나머지는 로그인한 회원.
+ *  권한 설정 화면과 각 페이지가 같은 값을 보도록 한곳에 둔다 */
+const WRITE_DEFAULT: Record<string, MenuPerm> = {
+  '/diary': 'admin', '/threads': 'admin', '/chars': 'admin', '/tchars': 'admin', '/dotori': 'admin', '/playlog': 'admin',
+};
+export const writeDefaultOf = (path: string): MenuPerm => WRITE_DEFAULT[path] ?? 'member';
+
+/** 게시판 글쓰기 권한 판정 (v2.1 사용자 요청 — 갤러리의 canGalleryWrite를 모든 게시판으로).
+ *  관리자는 항상, 「관리자」면 관리자만, 「가입자」면 로그인한 회원 중 writeMembers[key]에 든 사람
+ *  (비우면 전부). perm을 넘기면 그 값을 쓴다(리스트 게시판의 permWrite, 로드비의 roadUpload처럼
+ *  권한이 다른 곳에 저장된 게시판) — 안 넘기면 writePerm[key], 그것도 없으면 def */
+export function canWriteAt(
+  s: MenuSettings, key: string, viewer: MenuViewer, def: MenuPerm = 'member', perm?: MenuPerm,
+): boolean {
+  if (viewer.isAdmin) return true;
+  const p = perm ?? s.writePerm?.[key] ?? def;
+  if (p === 'admin') return false;
+  // 「방문자」(로드비 옛 옵션)도 글은 로그인해야 쓴다 — 작성자 없는 글은 만들지 않는다
+  if (!viewer.loggedIn) return false;
+  const members = s.writeMembers?.[key];
   return !members?.length || (!!viewer.id && members.includes(viewer.id));
 }
 

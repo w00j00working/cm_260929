@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useLocalList } from '@/lib/postStore';
 import {
   DotoriItem, DotoriStatus, DOTORI_SEED, DOTORI_STATUS_KEYS, useTrpgSettings, dotoriBadgeStyle,
@@ -20,10 +21,14 @@ type Tab = 'all' | DotoriStatus;
 
 function DotoriPageInner() {
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [itemsAll, setItemsAll, loaded] = useLocalList<DotoriItem>('ohome.dotori.v1', DOTORI_SEED);
   // 여러 개로 만든 섹션 (v2.0) — 주소의 ?s= 가 가리키는 것만 보여 준다
   const sec = useSectionParam('dotori');
+  // 등록 권한 (v2.1) — 환경설정 「권한」에서 게시판마다 (기본: 관리자) · 수정·삭제는 등록한 본인과 관리자
+  const [menuSet] = useMenuSettings();
+  const canAdd = canWriteAt(menuSet, writeKeyOf('/dotori', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/dotori'));
+  const canEdit = (it: DotoriItem) => isAdmin || (!!user && it.authorId === user.id);
   const items = filterSection(itemsAll, sec.id);
   // 저장은 이 섹션 자리만 교체 — 걸러진 목록을 그대로 넘겨도 다른 섹션이 지워지지 않는다
   const setItems = sectionSetter(itemsAll, sec.id, setItemsAll);
@@ -96,7 +101,7 @@ function DotoriPageInner() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <SearchBar placeholder="시나리오·라이터·태그 검색" onSearch={setQ} />
-          {isAdmin && <button className="btn btn-dark" onClick={() => router.push('/dotori/new' + secQuery('dotori', sec.id))}>＋ ADD</button>}
+          {canAdd && <button className="btn btn-dark" onClick={() => router.push('/dotori/new' + secQuery('dotori', sec.id))}>＋ ADD</button>}
         </div>
       </div>
 
@@ -105,13 +110,13 @@ function DotoriPageInner() {
           const i = start + si;   // 정렬은 전체 기준 위치로
           return (
           <div key={it.id} className="panel dt-card" {...sort(i)}
-            style={{ cursor: isAdmin ? 'pointer' : undefined, ...(sort(i) as { style?: React.CSSProperties }).style }}
+            style={{ cursor: canEdit(it) ? 'pointer' : undefined, ...(sort(i) as { style?: React.CSSProperties }).style }}
             onContextMenu={e => {
               if (!isAdmin) return;
               e.preventDefault();
               setOrdFor({ id: it.id, x: e.clientX, y: e.clientY });
             }}
-            onClick={() => { if (isAdmin && !editOn) router.push(`/dotori/${it.id}/edit`); }}>
+            onClick={() => { if (canEdit(it) && !editOn) router.push(`/dotori/${it.id}/edit`); }}>
             <div className="th">
               <CroppedBlobImg fileRef={it.imgId} crop={it.thumbCrop} ph={it.ph} />
               {/* 뱃지 — 공수표·일정 확정만, 이미지 우상단 (4.15) */}
@@ -120,7 +125,7 @@ function DotoriPageInner() {
                   {trpgSet.statuses[it.status].label}
                 </span>
               )}
-              {isAdmin && (
+              {canEdit(it) && (
                 <div className="hv-actions dt-actions" onClick={e => e.stopPropagation()}>
                   <button onClick={() => setStatusFor(s => (s === it.id ? null : it.id))}>STATUS</button>
                   <button className="del" onClick={() => setDelFor(it)}>DELETE</button>

@@ -2,6 +2,7 @@
 // 감상타래 작품 등록/수정 폼 (4.17) — 페이지형 (등록: /threads/new · 수정: /threads/[id]/edit)
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth';
 import { useLocalList, newId } from '@/lib/postStore';
 import { useSectionParam, secStamp, secQuery, MAIN_SEC } from '@/lib/sectionStore';
 import { ThreadWork, THREAD_SEED, useThreadSettings, threadCats } from '@/lib/threadStore';
@@ -16,6 +17,7 @@ const PHS = ['cool', 'warm', 'pale', 'red'];
 export function ThreadForm({ editId }: { editId?: string }) {
   const router = useRouter();
   const toast = useToast();
+  const { user } = useAuth();   // 타래를 시작한 사람을 남긴다 (v2.1)
   const [works, setWorks, loaded] = useLocalList<ThreadWork>('ohome.threads.v1', THREAD_SEED);
   // 어느 감상타래에서 눌러 왔는지 (v2.0)
   const sec = useSectionParam('threads');
@@ -84,6 +86,7 @@ export function ThreadForm({ editId }: { editId?: string }) {
         catId, visibility: vis, posterId, posterCrop: crop,
         ph: PHS[works.length % PHS.length],
         created: new Date().toISOString(), posts: [],
+        ...(user ? { createdBy: user.id } : {}),
       };
       setWorks([{ ...w, ...secStamp(sec.id) }, ...works]);
       toast('타래가 시작되었습니다');

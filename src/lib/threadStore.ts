@@ -33,6 +33,8 @@ export interface ThreadWork {
   visibility: Visibility;
   created: string;           // 타래 시작 ISO
   posts: ThreadPost[];
+  /** 타래를 시작한 회원 (v2.1 — 환경설정 「권한」에서 회원에게도 열 수 있게 되면서) · 정보 수정·이어쓰기·삭제는 본인과 관리자 */
+  createdBy?: string;
 }
 
 /* ---------- 분류 + 기본 보기 설정 (4.17 — 환경설정에서 관리) ---------- */

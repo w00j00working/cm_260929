@@ -17,7 +17,7 @@ import { newId } from '@/lib/postStore';
 import { useCommSettings, badgeStyle, CommBadge, CommSettings } from '@/lib/commStore';
 import {
   useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf,
-  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID,
+  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
 import { useTrpgSettings, DOTORI_STATUS_KEYS, DotoriStatus, dotoriBadgeStyle } from '@/lib/galleryStore';
@@ -25,11 +25,11 @@ import { useMemoSettings } from '@/lib/memoStore';
 import {
   useMenuSettings, MenuSettings, MenuPerm, MenuVis, PLAYLOG_COLS,
   MenuGroupNode, MenuLeaf, defaultTree, newGroupId, menuLabelFor, extraBoardHref, boardEntries,
-  IMG_PROTECT_AREAS,
+  IMG_PROTECT_AREAS, writeKeyOf, writeDefaultOf,
 } from '@/lib/menuStore';
 import { FEATURES } from '@/lib/menu';
 import { SectionsBlock } from '@/components/settings/SectionList';
-import { useSections, sectionsOf, sectionMenuEntries, MAIN_SEC, inSection } from '@/lib/sectionStore';
+import { useSections, sectionsOf, sectionMenuEntries, MAIN_SEC, inSection, SECTION_META, SectionKind } from '@/lib/sectionStore';
 import { useCustomLinks, linkEntries, toInternalPath } from '@/lib/linkStore';
 import { useSiteDraft } from '@/lib/siteStore';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -2180,6 +2180,67 @@ function MenuPane() {
         { value: 'admin', label: `${label}: 관리자` },
       ]} />
   );
+  /* 게시판 글쓰기 권한 (v2.1 사용자 요청 — 갤러리에만 있던 「가입자/관리자 + 글쓰기 멤버」를 모든 게시판에).
+     값은 게시판마다 다른 곳에 산다 — 리스트는 게시판 설정 permWrite, 로드비 기본 페이지는 roadUpload,
+     나머지(다이어리·감상타래·캐릭터·TRPG 캐릭터·도토리·플레이기록·추가 로드비)는 메뉴 설정 writePerm[키] —
+     멤버 선택은 전부 writeMembers[키] */
+  const setWriteMembers = (key: string, n: string[]) => {
+    const next = { ...ms.writeMembers };
+    if (n.length) next[key] = n; else delete next[key];
+    return next;
+  };
+  /** 「글쓰기 멤버」 버튼 — 가입자 권한일 때만. 체크한 회원(+관리자)만 쓰게 좁힌다 */
+  const writeMembersBtn = (key: string, perm: MenuPerm, what: string) => {
+    if (perm === 'admin') return null;
+    const ids = ms.writeMembers?.[key];
+    return (
+      <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
+        onClick={() => setMemAsk({
+          ids: ids ?? [],
+          desc: `체크한 회원(그리고 관리자)만 이 게시판에 ${what}할 수 있습니다 — 비우면 로그인한 모든 회원`,
+          apply: n => patch({ writeMembers: setWriteMembers(key, n) }),
+        })}>
+        {ids?.length ? `${what} 멤버 ${ids.length}명` : `${what} 멤버`}
+      </button>
+    );
+  };
+  /** 멤버 버튼 + 가입자/관리자 셀렉트. 관리자 전용으로 바꾸면 멤버 선택은 함께 지운다 — 몰래 남아 있지 않게 (갤러리와 같은 규칙) */
+  const writePermUI = (key: string, perm: MenuPerm, setPerm: (v: MenuPerm) => void, what: string) => (
+    <>
+      {writeMembersBtn(key, perm, what)}
+      <KSelect minWidth={110} value={perm}
+        onChange={v => {
+          if (v === 'admin' && ms.writeMembers?.[key]) patch({ writeMembers: setWriteMembers(key, []) });
+          setPerm(v as MenuPerm);
+        }}
+        options={[
+          { value: 'member', label: `${what}: 가입자` },
+          { value: 'admin', label: `${what}: 관리자` },
+        ]} />
+    </>
+  );
+  /** 메뉴 주소 → 글쓰기 권한 저장 키·지금 값·기본값 (writePerm에 사는 게시판만 · 아니면 null) */
+  const writePermOf = (href: string): { key: string; perm: MenuPerm; what: string } | null => {
+    const [path, query = ''] = href.split('?');
+    const sq = new URLSearchParams(query).get('s');
+    let secId = MAIN_SEC;
+    if (sq) {
+      // 메뉴 주소에는 별명(slug)이 적혀 있을 수 있다 — id로 통일해 저장
+      const kind = (Object.keys(SECTION_META) as SectionKind[]).find(k => SECTION_META[k].href === path);
+      const sec = kind ? sectionsOf(secMap, kind).find(s2 => s2.id === sq || s2.slug === sq) : undefined;
+      if (!sec) return null;
+      secId = sec.id;
+    }
+    const inWritePerm = ['/diary', '/threads', '/chars', '/tchars', '/dotori', '/playlog'].includes(path)
+      // 추가 로드비 — 기본 페이지의 공통값(roadUpload)을 따르되 따로 정할 수 있다 (기본 페이지는 아래 /loadb 가지에서)
+      || (path === '/loadb' && secId !== MAIN_SEC);
+    if (!inWritePerm) return null;
+    const def: MenuPerm = path === '/loadb' ? (ms.roadUpload === 'admin' ? 'admin' : 'member') : writeDefaultOf(path);
+    const key = writeKeyOf(path, secId);
+    const what = path === '/loadb' ? '업로드' : ['/tchars', '/chars', '/playlog', '/dotori'].includes(path) ? '등록' : '글쓰기';
+    return { key, perm: ms.writePerm?.[key] ?? def, what };
+  };
+
   // 메뉴별 부속 설정 — 기본 탭용 (표시 방식 등)
   const extraFor = (href: string) => {
     switch (href) {
@@ -2223,12 +2284,8 @@ function MenuPane() {
       if (!bd) return null;
       return (
         <>
-          <KSelect minWidth={110} value={bd.permWrite}
-            onChange={v => patchBoard(bd.id, { permWrite: v as BoardPerm })}
-            options={[
-              { value: 'member', label: '글쓰기: 가입자' },
-              { value: 'admin', label: '글쓰기: 관리자' },
-            ]} />
+          {/* 글쓰기 — 게시판 설정 permWrite + 「글쓰기 멤버」 (v2.1) */}
+          {writePermUI(boardHref(bd.id), bd.permWrite, v => patchBoard(bd.id, { permWrite: v as BoardPerm }), '글쓰기')}
           <KSelect minWidth={110} value={bd.permComment}
             onChange={v => patchBoard(bd.id, { permComment: v as BoardPerm })}
             options={[
@@ -2242,7 +2299,9 @@ function MenuPane() {
     if (href === '/loadb') {
       return (
         <>
-          {permSel('업로드', ms.roadUpload, v => patch({ roadUpload: v }))}
+          {/* 업로드 멤버 (v2.1) — 기본 로드비는 공통값 roadUpload에 「업로드 멤버」만 얹는다 */}
+          {writeMembersBtn('/loadb', ms.roadUpload, '업로드')}
+          {permSel('업로드', ms.roadUpload, v => patch({ roadUpload: v, ...(v === 'admin' ? { writeMembers: setWriteMembers('/loadb', []) } : {}) }))}
           {permSel('댓글', ms.roadComment, v => patch({ roadComment: v }))}
         </>
       );
@@ -2285,6 +2344,9 @@ function MenuPane() {
         </>
       );
     }
+    // 그 밖의 게시판 (다이어리·감상타래·캐릭터·TRPG 캐릭터·도토리·플레이기록·추가 로드비) — 메뉴 설정 writePerm (v2.1 사용자 요청)
+    const wp = writePermOf(href);
+    if (wp) return writePermUI(wp.key, wp.perm, v => patch({ writePerm: { ...ms.writePerm, [wp.key]: v } }), wp.what);
     return null;
   };
 
@@ -2344,6 +2406,8 @@ function MenuPane() {
         <div>
           <div className="d">
             공개범위는 메뉴 노출을 정합니다(전부 보임 / 비로그인 숨김 / 관리자만) — SAVE를 눌러야 반영 · 글쓰기·댓글 권한은 즉시 반영
+            <br />
+            글쓰기 권한은 게시판마다(갤러리·리스트·로드비·다이어리·감상타래·캐릭터·TRPG 캐릭터·도토리·플레이기록) 가입자/관리자로 — <b>글쓰기 멤버</b>로 특정 회원만 쓰게 좁힐 수 있습니다
             <br />
             「비로그인 숨김」 옆 <b>멤버 선택</b>으로 특정 회원에게만 보이게 좁힐 수 있습니다 — 비우면 로그인한 모든 회원
             <br />

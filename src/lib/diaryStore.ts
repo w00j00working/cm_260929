@@ -23,6 +23,8 @@ export interface DiaryPost {
   body: string;              // MD
   imgIds: string[];          // 첨부 이미지 (IndexedDB)
   visibility: Visibility;
+  /** 쓴 회원 (v2.1 — 환경설정 「권한」에서 회원에게도 일기를 열 수 있게 되면서) · 수정·삭제는 본인과 관리자 */
+  authorId?: string;
 }
 
 export const DIARY_SEED: DiaryPost[] = [];

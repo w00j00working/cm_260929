@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
 import { useLocalList } from '@/lib/postStore';
 import { PlayRecord, PLAYLOG_SEED } from '@/lib/galleryStore';
-import { useMenuSettings } from '@/lib/menuStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useMainStore } from '@/lib/mainStore';
 import { useCardSort, mergeOrder } from '@/lib/cardSort';
 import { SearchBar, Pager } from '@/components/ui/Kit';
@@ -27,7 +27,7 @@ function ClipIcon() {
 
 function PlaylogPageInner() {
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [recordsAll, setRecordsAll, loaded] = useLocalList<PlayRecord>('ohome.playlog.v1', PLAYLOG_SEED);
   // 여러 개로 만든 섹션 (v2.0) — 주소의 ?s= 가 가리키는 것만 보여 준다
   const sec = useSectionParam('playlog');
@@ -41,6 +41,9 @@ function PlaylogPageInner() {
 
   // 표시 열 — 환경설정 > 메뉴 관리에서 PC/모바일 각각 선택 (4.16 v1.8)
   const [menuSet] = useMenuSettings();
+  // 등록 권한 (v2.1) — 환경설정 「권한」에서 (기본: 관리자) · 수정·삭제는 등록한 본인과 관리자
+  const canAdd = canWriteAt(menuSet, writeKeyOf('/playlog', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/playlog'));
+  const canEdit = (r: PlayRecord) => isAdmin || (!!user && r.authorId === user.id);
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia('(max-width:620px)');
@@ -87,7 +90,7 @@ function PlaylogPageInner() {
         <EditableDesc k="playlog-desc" def="다녀온 세션 기록 — 표 형식" />
         <div className="head-actions">
           <SearchBar placeholder="시나리오·라이터·동행 검색" onSearch={v => { setQ(v); setPage(1); }} />
-          {isAdmin && <button className="btn btn-dark" onClick={() => router.push('/playlog/new' + secQuery('playlog', sec.id))}>＋ ADD RECORD</button>}
+          {canAdd && <button className="btn btn-dark" onClick={() => router.push('/playlog/new' + secQuery('playlog', sec.id))}>＋ ADD RECORD</button>}
         </div>
       </div>
 
@@ -102,7 +105,7 @@ function PlaylogPageInner() {
             {show('role') && <col className="c-role" />}
             {show('playtime') && <col className="c-pt" />}
             {show('url') && <col className="c-url" />}
-            {isAdmin && !isMobile && <col className="c-mng" />}
+            {canAdd && !isMobile && <col className="c-mng" />}
           </colgroup>
           <thead>
             <tr>
@@ -117,7 +120,7 @@ function PlaylogPageInner() {
               {show('role') && <th>Role</th>}
               {show('playtime') && <th>Playtime</th>}
               {show('url') && <th aria-label="Url" />}
-              {isAdmin && !isMobile && <th aria-label="관리" />}
+              {canAdd && !isMobile && <th aria-label="관리" />}
             </tr>
           </thead>
           <tbody>
@@ -151,16 +154,20 @@ function PlaylogPageInner() {
                     ) : null}
                   </td>
                 )}
-                {isAdmin && !isMobile && (
+                {canAdd && !isMobile && (
                   <td className="td-mng">
-                    <button onClick={() => router.push(`/playlog/${r.id}/edit`)} data-tip="편집">✎</button>
-                    <button onClick={() => setDelFor(r)} data-tip="삭제">✕</button>
+                    {canEdit(r) && (
+                      <>
+                        <button onClick={() => router.push(`/playlog/${r.id}/edit`)} data-tip="편집">✎</button>
+                        <button onClick={() => setDelFor(r)} data-tip="삭제">✕</button>
+                      </>
+                    )}
                   </td>
                 )}
               </tr>
             ))}
             {shown.length === 0 && (
-              <tr><td colSpan={cols.length + (isAdmin && !isMobile ? 1 : 0)} style={{ textAlign: 'center', padding: 32, color: 'var(--faint)' }}>
+              <tr><td colSpan={cols.length + (canAdd && !isMobile ? 1 : 0)} style={{ textAlign: 'center', padding: 32, color: 'var(--faint)' }}>
                 {query ? '검색 결과가 없습니다' : '기록이 없습니다'}
               </td></tr>
             )}

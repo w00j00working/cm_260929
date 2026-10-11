@@ -6,27 +6,33 @@ import { useAuth } from '@/lib/auth';
 import { useLocalList } from '@/lib/postStore';
 import { Character, CHAR_SEED } from '@/lib/charStore';
 import { useSectionParam, secStamp, secQuery , useSectionTitle } from '@/lib/sectionStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { CharEditForm } from '@/components/chars/CharEditForm';
 import { useToast } from '@/components/ui/Toast';
 import { PageTitle, EditableDesc } from '@/components/ui/PageText';
 
 function CharNewInner() {
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [chars, setChars, loaded] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   const sec = useSectionParam('chars');   // 어느 캐릭터 목록에서 눌러 왔는지 (v2.0)
   // 큰 글씨 — 추가 섹션이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
   const tt = useSectionTitle('chars', sec.id, 'ADD CHARACTER');
+  // 등록 권한 (v2.1) — 환경설정 「권한」에서 (기본: 관리자) · ADD 버튼과 같은 판정으로 주소 직접 진입도 막는다
+  const [menuSet, , menuLoaded] = useMenuSettings();
 
-  if (!loaded) return <section className="page" />;
-  if (!isAdmin) {
+  if (!loaded || !menuLoaded) return <section className="page" />;
+  if (!canWriteAt(menuSet, writeKeyOf('/chars', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, writeDefaultOf('/chars'))) {
     return (
       <section className="page">
-        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>관리자 전용</p></div>
+        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>허용된 회원만 등록할 수 있습니다</p></div>
       </section>
     );
   }
+  // 회원이 등록하면 그 회원에게 「편집까지」 권한을 붙인다 (v2.1) — 자기가 만든 캐릭터를 고칠 수 있게.
+  // 기존 권한 체계(grants → 서버 editorIds)를 그대로 타므로 서버 규칙도 저장을 허용한다
+  const selfGrant = !isAdmin && user ? [{ userId: user.id, level: 'edit' as const }] : [];
 
   return (
     <section className="page">
@@ -39,7 +45,7 @@ function CharNewInner() {
         existingIds={chars.flatMap(c => [c.id, ...(c.slug ? [c.slug] : [])])}
         onCancel={() => router.push('/chars' + secQuery('chars', sec.id))}
         onSave={c => {
-          setChars([...chars, { ...c, ...secStamp(sec.id) }]);
+          setChars([...chars, { ...c, ...secStamp(sec.id), ...(selfGrant.length ? { grants: [...(c.grants ?? []), ...selfGrant] } : {}) }]);
           toast('캐릭터가 등록되었습니다');
           router.push(`/chars/${c.id}`);
         }}

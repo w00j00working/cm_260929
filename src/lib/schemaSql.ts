@@ -102,6 +102,7 @@ declare content_tables text[] := array[
   'characters',   -- 캐릭터
   'relations',    -- 자관
   'gallery',      -- 그림 백업(갤러리)
+  'feed',         -- 큰 그림 게시판 (v2.1 — 게시물이 하나씩 크게 뜨는 피드형)
   'roadview',     -- 로드뷰
   'trpg_logs',        -- TRPG 로그(목록 문서 — 본문 제외)
   'trpg_log_bodies',  -- TRPG 로그 본문 (v2.0, 목록과 분리 저장 — 나만보기 로그의 본문 보호용)

@@ -16,7 +16,7 @@ import { DiaryPost, DIARY_SEED } from '@/lib/diaryStore';
 import { newId } from '@/lib/postStore';
 import { useCommSettings, badgeStyle, CommBadge, CommSettings } from '@/lib/commStore';
 import {
-  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf,
+  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf, feedCatsOf, roadCatsOf,
   useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
@@ -652,6 +652,8 @@ function BoardPane() {
   const {
     st, patchSystem, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
+    patchFeedCat, addFeedCat, removeFeedCat, setFeedCats,
+    patchRoadCat, addRoadCat, removeRoadCat, setRoadCats,
   } = useBoardSettings();
   const { boards, setBoards, patchBoard } = useBoards();
   const [catBoard, setCatBoard] = useState(MAIN_BOARD_ID);   // 말머리 편집 대상 게시판
@@ -662,6 +664,13 @@ function BoardPane() {
   const [galSecSel, setGalSec] = useState(MAIN_SEC);
   const galSec = galSecs.some(s2 => s2.id === galSecSel) ? galSecSel : MAIN_SEC;
   const galCats = galleryCatsOf(st, galSec);
+  // 큰 그림 게시판 · 로드비 말머리 (v2.1) — 갤러리와 같은 방식으로 게시판마다
+  const feedSecs = secList('feed');
+  const [feedSecSel, setFeedSec] = useState(MAIN_SEC);
+  const feedSec = feedSecs.some(s2 => s2.id === feedSecSel) ? feedSecSel : MAIN_SEC;
+  const roadSecs = secList('roadview');
+  const [roadSecSel, setRoadSec] = useState(MAIN_SEC);
+  const roadSec = roadSecs.some(s2 => s2.id === roadSecSel) ? roadSecSel : MAIN_SEC;
   const del = useConfirmDelete();
 
   const sel = boards.find(b => b.id === catBoard) ?? boards[0];
@@ -824,6 +833,55 @@ function BoardPane() {
         )} />
       <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }}
         onClick={() => addGalleryCat(galSec)}>＋ 말머리 추가</button>
+
+      {/* 큰 그림 게시판 · 로드비 말머리 (v2.1 사용자 요청 — 말머리별로 모아보기) — 갤러리 말머리와 같은 모양 */}
+      {([
+        {
+          title: '큰 그림 말머리', desc: '큰 그림 게시판 글쓰기에서 고르는 말머리 — 목록 위 탭으로도 나옵니다',
+          secs: feedSecs, sec: feedSec, setSec: setFeedSec, cats: feedCatsOf(st, feedSec),
+          set: setFeedCats, patch: patchFeedCat, add: addFeedCat, remove: removeFeedCat,
+        },
+        {
+          title: '로드비 말머리', desc: '로드비에 그림을 올릴 때 고르는 말머리 — 목록 위 탭으로 모아 볼 수 있습니다 · 하나도 없으면 탭 없이 지금처럼',
+          secs: roadSecs, sec: roadSec, setSec: setRoadSec, cats: roadCatsOf(st, roadSec),
+          set: setRoadCats, patch: patchRoadCat, add: addRoadCat, remove: removeRoadCat,
+        },
+      ] as const).map(blk => (
+        <React.Fragment key={blk.title}>
+          <h3 style={{ marginTop: 20 }}>{blk.title}</h3>
+          <div className="d">
+            {blk.desc}
+            {blk.secs.length > 1 && <><br />게시판마다 따로 정합니다 — <b>손대기 전까지는 기본 게시판의 말머리를 그대로 씁니다</b></>}
+          </div>
+          {blk.secs.length > 1 && (
+            <div className="mini-seg" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+              {blk.secs.map(s2 => (
+                <button key={s2.id} className={blk.sec === s2.id ? 'on' : ''} onClick={() => blk.setSec(s2.id)}>{s2.name}</button>
+              ))}
+            </div>
+          )}
+          <DragList items={blk.cats} keyOf={c => c.id} onReorder={next => blk.set(blk.sec, next)}
+            render={c => (
+              <div className="set-row" style={{ width: '100%' }}>
+                <div className="l" style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
+                  <span className="drag-h">⠿</span>
+                  <span style={boardBadgeStyle(c)}>{c.label || '말머리'}</span>
+                </div>
+                <div className="cp-group" style={{ justifyContent: 'flex-end' }}>
+                  <KInput value={c.label} onChange={e => blk.patch(blk.sec, c.id, { label: e.target.value })}
+                    style={{ width: 100, textAlign: 'right' }} />
+                  {colorCells(c, p => blk.patch(blk.sec, c.id, p))}
+                  <span className="fx" data-tip="말머리 삭제"
+                    onClick={() => del.ask(`말머리 「${c.label}」를 삭제하시겠습니까?`,
+                      () => blk.remove(blk.sec, c.id),
+                      '이미 이 말머리로 등록된 글은 그대로 남습니다.')}>✕</span>
+                </div>
+              </div>
+            )} />
+          <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }}
+            onClick={() => blk.add(blk.sec)}>＋ 말머리 추가</button>
+        </React.Fragment>
+      ))}
 
       <hr style={{ margin: '24px 0', border: 'none', borderTop: '1.5px solid var(--line)' }} />
       {/* 갤러리·다이어리 등도 여러 개로 (v2.0 사용자 요청) — 목록이 몇 개인지는 여기 한곳에서 */}
@@ -2288,7 +2346,7 @@ function MenuPane() {
       if (!sec) return null;
       secId = sec.id;
     }
-    const inWritePerm = ['/diary', '/threads', '/chars', '/tchars', '/dotori', '/playlog'].includes(path)
+    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/tchars', '/dotori', '/playlog'].includes(path)
       // 추가 로드비 — 기본 페이지의 공통값(roadUpload)을 따르되 따로 정할 수 있다 (기본 페이지는 아래 /loadb 가지에서)
       || (path === '/loadb' && secId !== MAIN_SEC);
     if (!inWritePerm) return null;
@@ -2464,7 +2522,7 @@ function MenuPane() {
           <div className="d">
             공개범위는 메뉴 노출을 정합니다(전부 보임 / 비로그인 숨김 / 관리자만) — SAVE를 눌러야 반영 · 글쓰기·댓글 권한은 즉시 반영
             <br />
-            글쓰기 권한은 게시판마다(갤러리·리스트·로드비·다이어리·감상타래·캐릭터·TRPG 캐릭터·도토리·플레이기록) 가입자/관리자로 — <b>글쓰기 멤버</b>로 특정 회원만 쓰게 좁힐 수 있습니다
+            글쓰기 권한은 게시판마다(갤러리·큰 그림·리스트·로드비·다이어리·감상타래·캐릭터·TRPG 캐릭터·도토리·플레이기록) 가입자/관리자로 — <b>글쓰기 멤버</b>로 특정 회원만 쓰게 좁힐 수 있습니다
             <br />
             「비로그인 숨김」 옆 <b>멤버 선택</b>으로 특정 회원에게만 보이게 좁힐 수 있습니다 — 비우면 로그인한 모든 회원
             <br />

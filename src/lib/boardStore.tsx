@@ -31,11 +31,22 @@ export const DEFAULT_GALLERY_CATS: BoardBadge[] = ['합작', '낙서', '커미�
   id: `gcat-${c}`, label: c, bg: '#eef0f2', border: '#d7dae0', fg: '#5d636d',
 }));
 
+/** 큰 그림 게시판 말머리 (v2.1) — 합작을 크게 보려고 만든 게시판이라 합작이 먼저 */
+export const DEFAULT_FEED_CATS: BoardBadge[] = ['합작', '일러스트'].map(c => ({
+  id: `fcat-${c}`, label: c, bg: '#eef0f2', border: '#d7dae0', fg: '#5d636d',
+}));
+
 export interface BoardSettings {
   system: BoardBadge[]; cats: BoardBadge[]; gallery: BoardBadge[]; galleryCats: BoardBadge[];
   /** 갤러리마다 따로 쓰는 말머리 (v2.0 사용자 요청) — 정한 적 없으면 기본 갤러리 것을 그대로.
    *  새로 만들자마자 말머리가 비면 글부터 못 쓴다(감상타래·스케줄러와 같은 규칙). */
   secGalleryCats?: Record<string, BoardBadge[]>;
+  /** 큰 그림 게시판 말머리 (v2.1) — 갤러리와 같은 방식, 게시판(섹션)마다 따로 */
+  feedCats?: BoardBadge[];
+  secFeedCats?: Record<string, BoardBadge[]>;
+  /** 로드비 말머리 (v2.1 사용자 요청 — 말머리별로 모아보기). 정한 적 없으면 비어 있다 — 탭에 ALL만 보인다 */
+  roadCats?: BoardBadge[];
+  secRoadCats?: Record<string, BoardBadge[]>;
 }
 const DEFAULTS: BoardSettings = {
   system: DEFAULT_BOARD_SYSTEM, cats: DEFAULT_BOARD_CATS,
@@ -50,6 +61,20 @@ export const galleryCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
 /** 그 갤러리의 말머리를 담은 patch — 기본 갤러리면 예전 자리에 그대로 저장한다 */
 const galleryCatsPatch = (s: BoardSettings, secId: string, cats: BoardBadge[]): Partial<BoardSettings> =>
   (secId === MAIN_SEC ? { galleryCats: cats } : { secGalleryCats: { ...s.secGalleryCats, [secId]: cats } });
+
+/** 그 큰 그림 게시판에서 쓸 말머리 (v2.1) — 따로 정한 적이 없으면 기본 게시판 것, 그것도 없으면 기본값 */
+export const feedCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
+  (secId === MAIN_SEC ? (s.feedCats ?? DEFAULT_FEED_CATS) : s.secFeedCats?.[secId] ?? s.feedCats ?? DEFAULT_FEED_CATS);
+const feedCatsPatch = (s: BoardSettings, secId: string, cats: BoardBadge[]): Partial<BoardSettings> =>
+  (secId === MAIN_SEC ? { feedCats: cats } : { secFeedCats: { ...s.secFeedCats, [secId]: cats } });
+
+/** 그 로드비에서 쓸 말머리 (v2.1) — 따로 정한 적이 없으면 기본 로드비 것, 그것도 없으면 없음(ALL만) */
+export const roadCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
+  (secId === MAIN_SEC ? (s.roadCats ?? []) : s.secRoadCats?.[secId] ?? s.roadCats ?? []);
+const roadCatsPatch = (s: BoardSettings, secId: string, cats: BoardBadge[]): Partial<BoardSettings> =>
+  (secId === MAIN_SEC ? { roadCats: cats } : { secRoadCats: { ...s.secRoadCats, [secId]: cats } });
+
+const NEW_CAT = (): BoardBadge => ({ id: newId(), label: '새 말머리', bg: '#eef0f2', border: '#d7dae0', fg: '#5d636d' });
 
 export function useBoardSettings() {
   const [st, setSt] = useState<BoardSettings>(DEFAULTS);
@@ -105,9 +130,28 @@ export function useBoardSettings() {
     mutGalleryCats(secId, cs => cs.filter(b => b.id !== id)), [mutGalleryCats]);
   const setGalleryCats = useCallback((secId: string, cats: BoardBadge[]) =>
     mutGalleryCats(secId, () => cats), [mutGalleryCats]);
+  /* 큰 그림 게시판 · 로드비 말머리 (v2.1) — 갤러리 말머리와 같은 네 가지 조작을 종류별로 */
+  const mutFeedCats = useCallback((secId: string, fn: (cats: BoardBadge[]) => BoardBadge[]) =>
+    apply(s => ({ ...s, ...feedCatsPatch(s, secId, fn(feedCatsOf(s, secId))) })), [apply]);
+  const patchFeedCat = useCallback((secId: string, id: string, p: Partial<BoardBadge>) =>
+    mutFeedCats(secId, cs => cs.map(b => (b.id === id ? { ...b, ...p } : b))), [mutFeedCats]);
+  const addFeedCat = useCallback((secId: string) => mutFeedCats(secId, cs => [...cs, NEW_CAT()]), [mutFeedCats]);
+  const removeFeedCat = useCallback((secId: string, id: string) =>
+    mutFeedCats(secId, cs => cs.filter(b => b.id !== id)), [mutFeedCats]);
+  const setFeedCats = useCallback((secId: string, cats: BoardBadge[]) => mutFeedCats(secId, () => cats), [mutFeedCats]);
+  const mutRoadCats = useCallback((secId: string, fn: (cats: BoardBadge[]) => BoardBadge[]) =>
+    apply(s => ({ ...s, ...roadCatsPatch(s, secId, fn(roadCatsOf(s, secId))) })), [apply]);
+  const patchRoadCat = useCallback((secId: string, id: string, p: Partial<BoardBadge>) =>
+    mutRoadCats(secId, cs => cs.map(b => (b.id === id ? { ...b, ...p } : b))), [mutRoadCats]);
+  const addRoadCat = useCallback((secId: string) => mutRoadCats(secId, cs => [...cs, NEW_CAT()]), [mutRoadCats]);
+  const removeRoadCat = useCallback((secId: string, id: string) =>
+    mutRoadCats(secId, cs => cs.filter(b => b.id !== id)), [mutRoadCats]);
+  const setRoadCats = useCallback((secId: string, cats: BoardBadge[]) => mutRoadCats(secId, () => cats), [mutRoadCats]);
   return {
     st, loaded, patchSystem, patchCat, addCat, removeCat, setCats, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
+    patchFeedCat, addFeedCat, removeFeedCat, setFeedCats,
+    patchRoadCat, addRoadCat, removeRoadCat, setRoadCats,
   };
 }
 

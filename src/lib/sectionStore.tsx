@@ -20,11 +20,13 @@ import { getRawSetting, setSetting } from './settingStore';
 import { newId } from './postStore';
 
 export type SectionKind =
-  | 'gallery' | 'roadview' | 'trpg' | 'dotori' | 'playlog' | 'comm' | 'diary' | 'threads' | 'sched' | 'chars';
+  | 'gallery' | 'feed' | 'roadview' | 'trpg' | 'dotori' | 'playlog' | 'comm' | 'diary' | 'threads' | 'sched' | 'chars';
 
 /** 섹션 종류별 기본 정보 — 설정 탭 이름과 페이지 주소 */
 export const SECTION_META: Record<SectionKind, { label: string; href: string; defName: string }> = {
   gallery:  { label: '갤러리',    href: '/gallery',   defName: '갤러리' },
+  // 큰 그림 게시판 (v2.1 사용자 요청) — 게시물이 하나씩 크게 뜨는 피드형. 글 자체는 갤러리 글과 같은 모양이지만 자기 테이블(feed)에 쌓인다
+  feed:     { label: '큰 그림',   href: '/feed',      defName: '큰 그림' },
   roadview: { label: '로드비',    href: '/loadb', defName: '로드비' },
   trpg:     { label: '로그 백업', href: '/trpg',     defName: '로그 백업' },
   dotori:   { label: '도토리',    href: '/dotori',   defName: '도토리' },

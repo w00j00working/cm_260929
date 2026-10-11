@@ -15,6 +15,7 @@ export const FEATURES: { href: string; label: string }[] = [
   { href: '/rp', label: '역극' },
   { href: '/board', label: '리스트' },
   { href: '/gallery', label: '갤러리' },
+  { href: '/feed', label: '큰 그림' },   // 큰 그림 게시판 (v2.1) — 게시물이 하나씩 크게
   { href: '/loadb', label: '로드비' },
   { href: '/tchars', label: '캐릭터' },   // TRPG 캐릭터 — 자놀 캐릭터와는 href로 구분
   { href: '/trpg', label: '로그 백업' },
@@ -44,6 +45,7 @@ export const DEFAULT_MENU: MenuItem[] = [
     children: [
       { label: '리스트', href: '/board' },
       { label: '갤러리', href: '/gallery' },
+      { label: '큰 그림', href: '/feed' },
       { label: '로드비', href: '/loadb' },
     ],
   },

@@ -53,7 +53,7 @@ export interface MenuSettings {
 export type ImgProtectArea = 'board' | 'comm' | 'tchar' | 'chars' | 'rels';
 
 export const IMG_PROTECT_AREAS: { key: ImgProtectArea; label: string; paths: string[] }[] = [
-  { key: 'board', label: '게시판 (갤러리·로드비 포함)', paths: ['/board', '/gallery', '/loadb'] },
+  { key: 'board', label: '게시판 (갤러리·큰 그림·로드비 포함)', paths: ['/board', '/gallery', '/feed', '/loadb'] },
   { key: 'comm', label: '커미션', paths: ['/comm', '/comm-apply'] },
   { key: 'tchar', label: 'TRPG 캐릭터', paths: ['/tchars'] },
   { key: 'chars', label: '자캐 (캐릭터)', paths: ['/chars'] },

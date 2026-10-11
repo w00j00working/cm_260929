@@ -94,6 +94,7 @@ export const COLLECTION_OF: Record<string, string> = {
   'ohome.chars.v1': 'characters',
   'ohome.rels.v1': 'relations',
   'ohome.backup.v1': 'gallery',
+  'ohome.feed.v1': 'feed',   // 큰 그림 게시판 (v2.1) — 갤러리 글과 같은 모양, 자기 테이블
   'ohome.road.v1': 'roadview',
   'ohome.trpg.v1': 'trpg_logs',
   // TRPG 로그 본문 — 목록 문서와 분리 저장 (v2.0). 목록 노출(listHidden)과 열람 권한(visibility)이

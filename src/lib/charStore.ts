@@ -69,8 +69,6 @@ export interface Character {
 /** AU 캐릭터 프로필 (v1.9 전면 확장) — 이름·키·성별부터 전부 AU별로 달라질 수 있음.
  *  지정된 필드만 base를 대체 (구버전 basicHtml/arts만 있는 데이터도 그대로 동작) */
 export interface AuCharProfile {
-  /** 이 AU 프로필의 주소 별명 (커플홈 사용자 요청 — 「AU 프로필의 주소를 정할 수 없다」) — /chars/{캐릭터}?au={slug} */
-  slug?: string;
   basicHtml?: string;
   arts?: string[];
   name?: string;
@@ -91,54 +89,6 @@ export interface AuCharProfile {
 }
 
 /** AU 프로필을 합성한 표시용 캐릭터 — AU에서 지정한 필드만 대체 (상세·편집 프리필 공용) */
-/** AU 키(relId:auId)를 주소에 쓸 때의 표기 (커플홈) — 캐릭터 AU 프로필 별명 > 자관 AU 별명 > 키 */
-export function auParamOf(c: Character | undefined, rels: Relation[], key: string): string {
-  const own = c?.auProfiles?.[key]?.slug?.trim();
-  if (own) return own;
-  const [relId, auId] = key.split(':');
-  const au = rels.find(r => r.id === relId)?.aus.find(a => a.id === auId);
-  return au?.slug?.trim() || key;
-}
-
-/** ?au= 값 → AU 키 — 프로필 별명·자관 AU 별명·키 어느 것으로 들어와도 (별명을 바꿔도 옛 주소가 살아 있게) */
-export function resolveAuKey(c: Character | undefined, rels: Relation[], param: string | null): string | null {
-  if (!param || !c) return param;
-  for (const [k, p] of Object.entries(c.auProfiles ?? {})) if (p.slug?.trim() === param) return k;
-  for (const r of rels) {
-    if (!r.members.some(m => m.charId === c.id)) continue;
-    const au = r.aus.find(a => a.id !== 'base' && a.slug?.trim() === param);
-    if (au) return `${r.id}:${au.id}`;
-  }
-  return param;
-}
-
-/** 캐릭터를 AU 모습으로 (커플홈 — 메모 등 캐입에서 AU 캐릭터를 고를 때): AU 프로필 합성 + 자관 AU 수정에서 정한 이름 */
-export function charInAu(c: Character, rels: Relation[], auKey?: string | null): Character {
-  if (!auKey) return c;
-  const merged = charWithAu(c, auKey);
-  const [relId, auId] = auKey.split(':');
-  const auName = rels.find(r => r.id === relId)?.aus.find(a => a.id === auId)?.mset?.[c.id]?.name?.trim();
-  return auName ? { ...merged, name: auName } : merged;
-}
-
-/** 고를 수 있는 「캐릭터 + AU」 목록 — 원래 모습 하나와, 그 캐릭터가 멤버인 자관의 AU마다 하나씩 (커플홈 사용자 요청) */
-export function charAuOptions(chars: Character[], rels: Relation[]): { charId: string; auKey?: string; label: string; char: Character }[] {
-  const out: { charId: string; auKey?: string; label: string; char: Character }[] = [];
-  for (const c of chars) {
-    out.push({ charId: c.id, label: c.name, char: c });
-    for (const r of rels) {
-      if (!r.members.some(m => m.charId === c.id)) continue;
-      for (const a of r.aus) {
-        if (a.id === 'base') continue;
-        const key = `${r.id}:${a.id}`;
-        const ch = charInAu(c, rels, key);
-        out.push({ charId: c.id, auKey: key, label: `${ch.name} · ${a.label}`, char: ch });
-      }
-    }
-  }
-  return out;
-}
-
 export function charWithAu(c: Character, auKey?: string | null): Character {
   const p = auKey ? c.auProfiles?.[auKey] : undefined;
   if (!p) return c;
@@ -170,10 +120,6 @@ export function charWithAu(c: Character, auKey?: string | null): Character {
 }
 
 export interface CharGrant { userId: string; level: 'play' | 'edit' }
-
-/** 이 회원이 캐입으로 쓸 수 있는 캐릭터 (커플홈 — 감상타래·메모장 공용) — 관리자는 자캐, 상대 오너는 권한 받은 캐릭터 */
-export const inCharChoices = (chars: Character[], viewer: { isAdmin: boolean; id?: string }): Character[] =>
-  chars.filter(c => (viewer.isAdmin && c.own) || (!!viewer.id && !!charGrant(c, viewer.id)));
 
 /** 이 자관의 멤버 캐릭터 중 하나라도 권한을 받은 회원인가 (v2.0) — 문답 숨김 판정 */
 export function hasRelGrant(
@@ -276,8 +222,6 @@ export type RelCpTag = 'cp' | 'ncp';
  * AU 쪽에 따로 담아 두고, 여기 없는 값만 자관 기본을 그대로 쓴다(→ `auMember`).
  */
 export interface RelAuMember {
-  /** 이 AU에서 부르는 이름 (커플홈 사용자 요청 — 「AU가 바뀌면 이름도 바뀔 수 있다」). 비우면 캐릭터 이름(AU 프로필 이름이 있으면 그것) */
-  name?: string;
   quote?: string;
   fullScale?: number;
   fullOffX?: number;
@@ -293,48 +237,15 @@ export interface RelAuMember {
 
 /** 이 AU에서 이 멤버를 어떻게 보여 줄지 — AU에 정해 둔 값이 있으면 그것, 없으면 자관 기본.
  *  base(원본) AU이거나 정해 둔 게 없으면 자관 멤버를 그대로 돌려준다. */
-/** 자관 안에서 쓰는 1:1 얼굴칸 크롭 (v2.1) — 자관 페이지 우클릭 「썸네일 위치 조정」으로 잡은 값.
- *  AU에 따로 정한 값 > 자관 기본(멤버) > 캐릭터의 3:4 썸네일 크롭. 역극 등 자관 밖에서 같은 얼굴칸을
- *  그릴 때도 이 함수로 — 예전엔 캐릭터 크롭만 봐서 자관에서 맞춘 위치가 역극에서는 안 먹었다 */
-export function relFaceCrop(
-  rel: Relation | undefined, auId: string | undefined, char: Character,
-): import('@/components/ui/CropEditor').CropValue | undefined {
-  if (!rel) return char.thumbCrop;
-  const m = rel.members.find(x => x.charId === char.id);
-  const au = auId && auId !== 'base' ? rel.aus.find(a => a.id === auId) : undefined;
-  return au?.mset?.[char.id]?.faceCrop ?? m?.faceCrop ?? char.thumbCrop;
-}
-
-/** lounell 쪽 이름의 같은 기능 (이식 호환) — relId를 주면 그 자관, 없으면 캐릭터가 속한 첫 자관 ·
- *  auKey(「자관id:AU id」)를 주면 그 AU에서 따로 잡은 값부터 본다. 결과는 relFaceCrop과 같다 */
-export function faceCropOf(
-  c: Character | undefined, rels: Relation[], opt?: { relId?: string; auKey?: string },
-): import('@/components/ui/CropEditor').CropValue | undefined {
-  if (!c) return undefined;
-  const rel = (opt?.relId ? rels.find(r => r.id === opt.relId) : undefined)
-    ?? rels.find(r => r.members.some(m => m.charId === c.id));
-  let auId: string | undefined;
-  if (rel && opt?.auKey) {
-    const i = opt.auKey.indexOf(':');
-    if (opt.auKey.slice(0, i) === rel.id) auId = opt.auKey.slice(i + 1);
-  }
-  return relFaceCrop(rel, auId, c);
-}
-
 export function auMember(m: RelMember, au?: RelAu): RelMember {
   const o = au?.mset?.[m.charId];
+  if (!o) return m;
   const out = { ...m };
   // undefined는 「안 정했다」는 뜻 — 그대로 덮으면 자관 기본까지 지워진다
-  if (o) {
-    (Object.keys(o) as (keyof RelAuMember)[]).forEach(k => {
-      if (k === 'name') return;   // AU 이름은 캐릭터 표시 쪽(charOf)에서 쓴다 — 멤버 데이터에는 없는 칸
-      const v = o[k];
-      if (v !== undefined) (out as Record<string, unknown>)[k] = v;
-    });
-  }
-  // 한마디는 AU마다 따로 (커플홈 사용자 제보 — 「새 AU를 만들었는데 한마디가 그대로 이어져 있었다」).
-  // 색·크기 같은 설정은 안 정했으면 자관 기본을 따르지만, 대사는 그 AU에서 적은 것만 보인다
-  if (au && au.id !== 'base') out.quote = o?.quote ?? '';
+  (Object.keys(o) as (keyof RelAuMember)[]).forEach(k => {
+    const v = o[k];
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  });
   return out;
 }
 
@@ -411,15 +322,10 @@ export interface RelAu {
   catchphrase: string;
   /** AU별 자관명 (v2.0 사용자 요청) — 비우면 자관 이름을 그대로 쓴다 */
   name?: string;
-  /** AU 페이지 주소 별명 (커플홈 사용자 요청) — /rels/{자관}?au={slug}. 멤버의 AU 프로필 주소에도 쓴다 (프로필 별명이 없을 때) */
-  slug?: string;
   /** AU별 이름/본문 폰트 (v2.0 사용자 제보 — 여태 AU 편집의 폰트가 원본에 저장돼 전체가 같이 바뀌었다).
    *  미지정이면 자관 기본 폰트 */
   fontId?: string;
   bodyFontId?: string;
-  /** AU별 자관명 크기 px·굵게 (커플홈) — 미지정이면 자관 기본 */
-  titleSize?: number;
-  titleBold?: boolean;
   /** AU별 전신 앞뒤 (v2.0) — AU 편집의 앞으로/뒤로가 원본 배치를 바꾸지 않게. 미지정: 자관 기본 */
   fullFront?: string;
   /** AU별 색·배경 — 없으면 자관 기본 (위 RelAuStyle 설명 참조) */
@@ -428,7 +334,6 @@ export interface RelAu {
   mset?: Record<string, RelAuMember>;
   quotes?: string[];
   cp?: RelCpTag;          // 없으면 자관 기본(Relation.cp)
-  cpText?: string;        // AU별 CP 뱃지 문구 (커플홈) — 없으면 자관 기본, 그것도 없으면 CP/NCP
   arts?: string[];        // AU별 중앙/그룹 일러 (base는 Relation.arts)
   timeline?: TlItem[];    // base는 Relation.timeline
   questions?: QaEntry[];  // base는 Relation.questions
@@ -437,8 +342,6 @@ export interface RelAu {
   fulls?: Record<string, string>;  // AU별 전신 이미지 (charId → blob id, 없으면 멤버 공통 전신)
   headerImgId?: string | null;     // AU별 헤더 이미지 (v1.9) — base를 물려받지 않음, 이 AU 것만
   headerCrop?: import("@/components/ui/CropEditor").CropValue;
-  /** 헤더 흐림 정도 px (커플홈 사용자 요청 — "흐리지 않게 하는 것과 흐림 정도 조절") — 0이면 흐리지 않음, 없으면 기본(HEADER_BLUR_DEFAULT) */
-  headerBlur?: number;
   // AU별 페이지 테마 (v1.9 사용자 확정) — 미지정이면 base(원본) 테마 따라가기
   theme?: { mode: 'site' | 'custom'; color?: string; tone?: 'dark' | 'light' };
   /** 상세 하단의 역극/로그 연동 리스트 숨김 (v2.0 사용자 요청) — AU마다 따로.
@@ -456,13 +359,10 @@ export interface Relation {
   catchphrase: string;
   kind?: 'pair' | 'multi';         // 페어(2인) / 다인(3인+) — 등록 시 선택
   fontId?: string;               // 자관 이름 폰트 (4.5 필수 요구 — 5.1 라이브러리)
-  titleSize?: number;            // 자관명(상세 대형 타이틀) 크기 px (커플홈 사용자 요청) — 미지정 64
-  titleBold?: boolean;           // 자관명 굵게 — 미지정이면 굵게(지금까지와 같다)
   bodyFontId?: string;           // 본문 폰트 — 카드 소개·타임라인·문답 텍스트
   arts?: string[];               // 아트 목록 (첫 장 = 대표 = 리스트 썸네일 원본)
   headerImgId?: string;          // 헤더 이미지 (v1.5 — 상단 풀폭 블러 + 페이드아웃)
   headerCrop?: import("@/components/ui/CropEditor").CropValue; // 헤더 이미지 위치 크롭 (원본 무손실)
-  headerBlur?: number;           // 헤더 흐림 정도 px (커플홈 사용자 요청) — 0이면 흐리지 않음, 없으면 기본(HEADER_BLUR_DEFAULT)
   themeMode?: 'site' | 'custom'; // 페이지 테마: 홈페이지 그대로 / 별도 테마컬러 (4.18 방식)
   themeColor?: string;           // 별도 테마컬러 (custom일 때)
   themeTone?: 'dark' | 'light';  // 테마컬러의 다크/라이트 느낌
@@ -492,7 +392,6 @@ export interface Relation {
   illustMode: 'duo' | 'one';     // 2인: 전신 2장 / 일러 1장 (v1.8)
   aus: RelAu[];                  // AU 리스트 (첫 항목 = 원본 base)
   cp?: RelCpTag;                 // 자관 기본 CP/NCP (등록 시 선택, v1.9)
-  cpText?: string;               // CP 뱃지 문구 (커플홈 사용자 요청) — 비우면 CP/NCP 그대로
   fullFront?: string;            // 전신 모드에서 앞에 보일 캐릭터 id (v1.9 — 미리보기에서 클릭 선택)
   pairRight?: string;            // 페어에서 오른쪽 자리에 둘 캐릭터 id (v2.0 — 없으면 등록 순서대로)
   /** 상세 중앙 일러가 어디를 보여 줄지 (v2.0 사용자 요청) — 리스트 썸네일(thumbCrop)과 별개.
@@ -516,9 +415,6 @@ export const REL_SEED: Relation[] = [];
 
 export const findChar = (chars: Character[], id: string) => chars.find(c => c.id === id);
 
-/** 헤더 이미지 기본 흐림 px — 지금까지 CSS에 박혀 있던 값 (자관·AU에서 headerBlur를 정하지 않았을 때) */
-export const HEADER_BLUR_DEFAULT = 16;
-
 /* ---------- 페이지 주소 별명 (v2.0 사용자 요청) ---------- */
 /** 주소로 항목 찾기 — id로도, 별명으로도 열린다 (별명을 바꿔도 옛 주소가 살아 있게) */
 export const findByKey = <T extends { id: string; slug?: string }>(list: T[], key: string) =>
@@ -527,42 +423,3 @@ export const findByKey = <T extends { id: string; slug?: string }>(list: T[], ke
 export const charPath = (c: { id: string; slug?: string }) => `/chars/${c.slug?.trim() || c.id}`;
 /** 이 자관의 주소 — 별명을 정했으면 그것, 아니면 id */
 export const relPath = (r: { id: string; slug?: string }) => `/rels/${r.slug?.trim() || r.id}`;
-
-/** 메뉴에 얹을 자관 항목 (커플홈 사용자 요청 — 「자관을 추가하면 자관 페이지가 하나 더 생겨야 한다」).
- *  자관마다 /rels/<id> 페이지가 메뉴 항목이 된다 — 별명(slug)을 바꿔도 메뉴가 안 끊기게 id 주소로.
- *  기본 「자관」(/rels)은 첫 자관을 연다. 새 자관은 만들 때 자관 항목 뒤에 바로 배치한다 (rels/new) */
-export const relMenuHref = (id: string) => `/rels/${id}`;
-export const isRelMenuHref = (href: string) => href === '/rels' || /^\/rels\/[^/?]+$/.test(href);
-export const relMenuEntries = (rels: Relation[]) =>
-  rels.map(r => ({ id: r.id, name: r.name, href: relMenuHref(r.id), anchor: '/rels' }));
-
-/** 페어 자관의 [왼쪽, 오른쪽] 캐릭터 id — 상세에서 좌우를 바꿨으면(pairRight) 그 자리대로.
- *  페어가 아니거나 멤버가 둘이 안 되면 null (커플홈 — 다이어리 칸 나눔 등이 상세와 같은 배치를 쓴다) */
-export function pairSides(rel?: Relation): [string, string] | null {
-  if (!rel) return null;
-  const isPair = rel.kind ? rel.kind === 'pair' : rel.members.length === 2;
-  if (!isPair || rel.members.length < 2) return null;
-  const [a, b] = rel.members;
-  if (rel.pairRight && rel.members.some(m => m.charId === rel.pairRight)) {
-    const right = rel.pairRight;
-    return [(a.charId === right ? b : a).charId, right];
-  }
-  return [a.charId, b.charId];
-}
-
-/* ---------- 커플홈 — 자관 목록 페이지 없이 대표 자관으로 ---------- */
-/** 이 방문자가 열 수 있는 자관 (저장 순서 그대로) — 관리자는 전부, 회원은 나만보기 제외, 방문자는 전체공개만.
- *  첫 번째가 대표 자관이다: 메뉴의 「자관」(/rels)은 목록 대신 여기로 바로 간다 */
-export const openableRels = (rels: Relation[], viewer: { isAdmin: boolean; loggedIn: boolean }) =>
-  rels.filter(r => viewer.isAdmin
-    || r.visibility === 'public'
-    || (r.visibility === 'member' && viewer.loggedIn));
-
-/** 캐릭터를 지울 때 자관 멤버에서도 뺀 자관 목록 — 뺄 게 없으면 null (커플홈).
- *  지우는 쪽(관리자)이 바로 정리한다 — 자관 상세가 열릴 때 스스로 정리하게 두면
- *  방문자가 먼저 열었을 때 저장 권한이 없어 실패한다 */
-export function relsWithoutChar(rels: Relation[], charId: string): Relation[] | null {
-  const has = (r: Relation) => r.members.some(m => m.charId === charId);
-  if (!rels.some(has)) return null;
-  return rels.map(r => (has(r) ? { ...r, members: r.members.filter(m => m.charId !== charId) } : r));
-}

@@ -4,17 +4,18 @@
 // 화면 코드는 이 파일의 타입만 알고, 어떤 서비스에 붙었는지는 모른다.
 // 새 백엔드를 추가하려면 이 인터페이스만 구현하면 된다.
 
-/** 이 프로젝트는 Firebase만 쓴다 (v2.1.1 — Supabase 어댑터·스키마 제거) */
-export type BackendKind = 'firebase';
+export type BackendKind = 'supabase' | 'firebase';
 
 /** 설치 화면에서 입력받는 연결 정보 — 모두 공개돼도 되는 값이다(보안은 서버 규칙이 담당) */
-export type BackendConfig = {
-  kind: 'firebase';
-  apiKey: string; authDomain: string; projectId: string;
-  storageBucket: string; appId: string; messagingSenderId?: string;
-  /** Firestore 데이터베이스 ID — 비우면 (default). 콘솔에서 다른 이름으로 만들었을 때만 필요 */
-  databaseId?: string;
-};
+export type BackendConfig =
+  | { kind: 'supabase'; url: string; anonKey: string }
+  | {
+      kind: 'firebase';
+      apiKey: string; authDomain: string; projectId: string;
+      storageBucket: string; appId: string; messagingSenderId?: string;
+      /** Firestore 데이터베이스 ID — 비우면 (default). 콘솔에서 다른 이름으로 만들었을 때만 필요 */
+      databaseId?: string;
+    };
 
 /** 로그인 사용자 */
 export interface BackendUser {
@@ -24,16 +25,6 @@ export interface BackendUser {
   email?: string;
   avatarUrl?: string;
   avatarColor?: string;
-  /** 속한 홈(자관) — 가입코드로 정해진다. 총관리자는 없다 (v2.1) */
-  homeId?: string;
-}
-
-/** 홈(자관) 한 칸 — homes/{id} (v2.1) */
-export interface HomeRow {
-  id: string;
-  name: string;
-  inviteCode: string;
-  createdAt?: number;
 }
 
 /** 연결·규칙 점검 결과 (설치 화면의 [연결 확인]) */
@@ -57,39 +48,19 @@ export interface Backend {
   currentUser(): Promise<BackendUser | null>;
   onAuthChange(cb: (u: BackendUser | null) => void): () => void;
   signIn(id: string, password: string): Promise<{ ok: boolean; error?: string }>;
-  /** 가입 — inviteCode가 있으면 그 코드의 홈에 속한 회원으로, 없으면 홈 없는 계정(총관리자 설치용) (v2.1) */
-  signUp(id: string, password: string, nickname: string, inviteCode?: string): Promise<{ ok: boolean; error?: string }>;
+  signUp(id: string, password: string, nickname: string): Promise<{ ok: boolean; error?: string }>;
   signOut(): Promise<void>;
   resetPassword(email: string): Promise<{ ok: boolean; error?: string }>;
-  /** 내 정보 수정 — 닉네임·프로필 사진·색, 그리고 비밀번호(현재 비밀번호 확인 뒤 새 비밀번호).
-   *  비밀번호 항목은 여태 타입에 없어 서버 모드에서 **조용히 무시되고 「변경되었습니다」만 떴다** (커플홈 사용자 제보 — "비밀번호가 변경이 안 된다") */
-  updateProfile(patch: {
-    nickname?: string; avatarUrl?: string | null; avatarColor?: string | null;
-    currentPassword?: string; newPassword?: string;
-  }): Promise<{ ok: boolean; error?: string }>;
+  updateProfile(patch: { nickname?: string; avatarUrl?: string | null; avatarColor?: string | null }): Promise<{ ok: boolean; error?: string }>;
   /** 첫 계정을 이 홈의 관리자로 등록 (관리자가 아직 없을 때만) */
   claimOwner(): Promise<{ ok: boolean; error?: string }>;
   /** 가입 회원 목록 — 역극 참여자 선택·회원 관리 화면용.
    *  avatarUrl도 내준다 (v2.0 사용자 제보) — 이미지 정리가 콘텐츠·설정만 훑던 시절, 프로필 사진은
    *  어디에도 참조가 안 잡혀 「아무도 안 쓰는 파일」로 지워졌다. */
-  listMembers(): Promise<{ id: string; nickname: string; role: 'admin' | 'member'; email?: string; avatarUrl?: string; homeId?: string }[]>;
-
-  /* ---- 홈(자관) (v2.1) ---- */
-  /** 이후의 콘텐츠·설정 읽기/쓰기가 향할 홈 — 부팅 때 한 번 정한다. null = 홈 없음(리스트 화면) */
-  setHome(homeId: string | null): void;
-  /** 총관리자: 전체 / 회원: 자기 홈 하나 */
-  listHomes(): Promise<HomeRow[]>;
-  createHome(h: HomeRow): Promise<void>;
-  updateHome(id: string, patch: Partial<Pick<HomeRow, 'name' | 'inviteCode'>>): Promise<void>;
-  /** 홈 문서와 그 안의 설정·콘텐츠를 지운다 (회원 프로필·이미지 파일은 남는다) */
-  deleteHome(id: string): Promise<void>;
-  /** 회원을 홈에 연결/해제 — 총관리자 전용. 자관이 지워져 갈 곳을 잃은 회원을 다른 자관에 붙일 때 */
-  setMemberHome(uid: string, homeId: string | null): Promise<void>;
+  listMembers(): Promise<{ id: string; nickname: string; role: 'admin' | 'member'; email?: string; avatarUrl?: string }[]>;
 
   /* ---- 목록(콘텐츠) ---- */
   fetchList<T extends ListItem>(coll: string): Promise<T[]>;
-  /** 문서 한 건 (커플홈 — RP LOG 본문처럼 큰 문서가 모인 컬렉션은 목록 통째로 받으면 느리다). 없거나 읽을 권한이 없으면 null */
-  fetchOne<T extends ListItem>(coll: string, id: string): Promise<T | null>;
   syncList<T extends ListItem>(coll: string, prev: T[], next: T[], uid: string | null): Promise<void>;
   /** 이미 저장된 행의 공개범위만 다시 계산해 덮어쓴다 (v2.0) — 메뉴를 비공개로 바꾼 뒤
    *  「글에도 적용」을 누르면 돈다. 내용(data)·순서(sort)는 건드리지 않는다. */
@@ -148,14 +119,6 @@ export const COLLECTION_OF: Record<string, string> = {
   // 역극 발화 — 방 안이 아니라 자기 문서로 (v2.0). 같은 이유로, 방 안에 두면 말할 때마다
   // 방을 UPDATE 해야 해서 남이 만든 방에서 참여자가 발화할 수 없었다
   'ohome.rpmsgs.v1': 'rp_messages',
-  // 역극 입력 중 표시 (v2.1 사용자 요청) — 방·사람당 문서 하나, 몇 초 뒤 지워지는 가벼운 표시.
-  // 발화(rp_messages)에 섞으면 표시 한 번마다 모든 참여자가 발화 전체를 다시 받게 돼 따로 둔다
-  'ohome.rptyping.v1': 'rp_typing',
-  // 감상타래 글 — 타래 안이 아니라 자기 문서로 (커플홈). 같은 이유로, 타래 안에 두면
-  // 상대 오너가 관리자 타래에 이어 쓸 수 없다 (두 사람이 같이 쓰는 타래)
-  'ohome.thrposts.v1': 'thread_posts',
-  // Videos 게시판 (커플홈 사용자 요청) — 영상 하나를 파일·링크로 올리는 글. 갤러리와 따로 둔다
-  'ohome.videos.v1': 'videos',
   // 알림 — 기기 보관이던 것을 서버로 (v2.0 포크 제보 「알림이 안 와요」).
   // 행 주인(authorId)을 받는 사람으로 적어, 받는 사람 계정이 어느 기기에서나 받아 간다
   'ohome.notif.v1': 'notifications',
@@ -218,17 +181,12 @@ export function metaOf(item: ListItem, uid: string | null, floor = 'public') {
  * (v2.0 사용자 발견 — 댓글 문제와 같은 뿌리).
  */
 export function editorIdsOf(item: ListItem): string[] {
-  // 문서에 바로 적어 둔 평평한 목록 (커플홈 — RP LOG: 등록 권한이 있는 회원은 수정도, trpgPerm.ts)
-  const flat = Array.isArray(item.editorIds)
-    ? (item.editorIds as unknown[]).filter((s): s is string => typeof s === 'string')
-    : [];
   const grants = item.grants;
-  if (!Array.isArray(grants)) return flat;
-  const fromGrants = grants
+  if (!Array.isArray(grants)) return [];
+  return grants
     .filter((g): g is { userId: string; level: string } =>
       !!g && typeof g === 'object'
       && typeof (g as { userId?: unknown }).userId === 'string'
       && (g as { level?: unknown }).level === 'edit')
     .map(g => g.userId);
-  return [...new Set([...flat, ...fromGrants])];
 }

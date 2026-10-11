@@ -13,7 +13,7 @@ import { PageTitle } from '@/components/ui/PageText';
 export default function PlaylogEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const toast = useToast();
   const [records, setRecords, loaded] = useLocalList<PlayRecord>('ohome.playlog.v1', PLAYLOG_SEED);
   // 큰 글씨 — 추가 섹션 항목이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
@@ -21,8 +21,7 @@ export default function PlaylogEditPage() {
   const r = records.find(x => x.id === id);
 
   if (!loaded) return <section className="page" />;
-  // 수정은 등록한 본인과 관리자 (커플홈 — 일반 회원도 등록할 수 있게 되면서)
-  if (!r || !(isAdmin || (!!user && r.authorId === user.id))) {
+  if (!isAdmin || !r) {
     return (
       <section className="page">
         <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>기록을 찾을 수 없거나 권한이 없습니다</p></div>

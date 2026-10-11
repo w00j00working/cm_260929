@@ -4,7 +4,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth, inviteCode, setInviteCode } from '@/lib/auth';
 import { useMembers } from '@/lib/members';
-import { currentHomeId } from '@/lib/home';
 import { useTheme } from '@/lib/ThemeProvider';
 import { ThemeVars } from '@/lib/theme';
 import { ColorField } from '@/components/ui/ColorField';
@@ -14,11 +13,11 @@ import { useMainStore, WidgetConf, WIDGET_META, MULTI_TYPES, widgetLabel } from 
 import { useConfirmDelete, ConfirmModal, Modal } from '@/components/ui/Modal';
 import { exportBackup, importBackup, resetGroups, RESET_CONTENT, RESET_EXTRA } from '@/lib/backup';
 import { DiaryPost, DIARY_SEED } from '@/lib/diaryStore';
-import { newId, todayYmd } from '@/lib/postStore';
+import { newId } from '@/lib/postStore';
 import { useCommSettings, badgeStyle, CommBadge, CommSettings } from '@/lib/commStore';
 import {
-  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf, videoCatsOf,
-  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref,
+  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf,
+  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
 import { useTrpgSettings, DOTORI_STATUS_KEYS, DotoriStatus, dotoriBadgeStyle } from '@/lib/galleryStore';
@@ -26,11 +25,11 @@ import { useMemoSettings } from '@/lib/memoStore';
 import {
   useMenuSettings, MenuSettings, MenuPerm, MenuVis, PLAYLOG_COLS,
   MenuGroupNode, MenuLeaf, defaultTree, newGroupId, menuLabelFor, extraBoardHref, boardEntries,
-  IMG_PROTECT_AREAS, writeKeyOf,
+  IMG_PROTECT_AREAS,
 } from '@/lib/menuStore';
 import { FEATURES } from '@/lib/menu';
 import { SectionsBlock } from '@/components/settings/SectionList';
-import { useSections, sectionsOf, sectionMenuEntries, MAIN_SEC, inSection, SECTION_META, SectionKind } from '@/lib/sectionStore';
+import { useSections, sectionsOf, sectionMenuEntries, MAIN_SEC, inSection } from '@/lib/sectionStore';
 import { useCustomLinks, linkEntries, toInternalPath } from '@/lib/linkStore';
 import { useSiteDraft } from '@/lib/siteStore';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -40,32 +39,30 @@ import { SymbolInput } from '@/components/ui/SymbolInput';
 import { allBlobs, putBlobAs, useBlobUrl, getBlob } from '@/lib/blobStore';
 import { parseAni } from '@/lib/aniCursor';
 import { fileDrop } from '@/lib/dnd';
-import { Character, CHAR_SEED, Relation, REL_SEED, charPath, relsWithoutChar, relMenuEntries } from '@/lib/charStore';
-import { phStyle } from '@/lib/color';
-import { CroppedBlobImg } from '@/components/ui/CropEditor';
+import { Character, CHAR_SEED, Relation, REL_SEED } from '@/lib/charStore';
 import { useLocalList } from '@/lib/postStore';
-import { Mood, MOOD_SEED, moodTint, useDiarySettings, DiaryCat } from '@/lib/diaryStore';
+import { Mood, MOOD_SEED, moodTint } from '@/lib/diaryStore';
 import {
   TextSettingEditor, DdayEditor, TodoEditor, BannerEditor, DecoEditor,
 } from '@/components/main/widgetEditors';
-import { useBgm, BgmTrack, parseVideoId, MAIN_LIST } from '@/lib/bgmStore';
+import { useBgm, BgmTrack, parseVideoId } from '@/lib/bgmStore';
 import { useFonts, fontCssUrl, FontDef, FontRole, ROLE_LABEL, FOLLOW_MENU, FOLLOW_TITLE } from '@/lib/fontStore';
 import { useToast } from '@/components/ui/Toast';
 import { PageTitle, EditableDesc, getPageText, setPageText } from '@/components/ui/PageText';
 import { putBlob } from '@/lib/blobStore';
 import { getSetting, setSetting, pushLocalSettings, unsyncedSettingKeys, SETTING_KEYS } from '@/lib/settingStore';
 import { isServerMode, createBackend, backend } from '@/lib/backend';
-import type { BackendConfig } from '@/lib/backend/types';
+import type { BackendConfig, BackendKind } from '@/lib/backend/types';
 import { CONTENT_COLLECTIONS } from '@/lib/backend/types';
 import { visFloorOf } from '@/lib/visFloor';
 import { validateConfig, configFileText, saveLocalConfig, parseFirebaseSnippet, serverConfig, serverConfigSource } from '@/lib/serverConfig';
 import { migrateTo, findOrphanFiles } from '@/lib/transfer';
 import { FIRESTORE_RULES, STORAGE_RULES } from '@/lib/firebaseRules';
-
+import { SCHEMA_SQL } from '@/lib/schemaSql';
 
 const CATEGORIES = [
-  '디자인', '메인 페이지', '위젯', '메뉴 관리', '게시판 관리', '캐릭터', '자관 질문', 'TRPG', '감상타래', '메모장',
-  '폰트', '마우스 커서', 'BGM', '다이어리', '회원/보안', '데이터 백업',
+  '디자인', '메인 페이지', '위젯', '메뉴 관리', '게시판 관리', '자관 질문', '커미션', 'TRPG', '감상타래', '메모장',
+  '폰트', '마우스 커서', 'BGM', '무드 리스트', '회원/보안', '데이터 백업',
 ] as const;
 
 /** 색 항목 한 쌍 렌더 헬퍼 */
@@ -614,14 +611,13 @@ function WidgetsPane() {
   const { state } = useMainStore();
   // 설정값이 있는 위젯만 — 실데이터 연동 위젯(DIARY·LATEST·UPCOMING)과 메뉴리스트·회원정보창은 설정값 없음
   const editable = state.widgets.filter(w =>
-    (['banner', 'memo', 'dday', 'ddaytext', 'todo', 'freetext', 'deco'] as const).some(t => t === w.type));
+    (['banner', 'memo', 'dday', 'todo', 'freetext', 'deco'] as const).some(t => t === w.type));
 
   const editorOf = (w: WidgetConf) => {
     switch (w.type) {
       case 'memo':
       case 'freetext': return <TextSettingEditor conf={w} />;
-      case 'dday':
-      case 'ddaytext': return <DdayEditor conf={w} />;
+      case 'dday': return <DdayEditor conf={w} />;
       case 'todo': return <TodoEditor conf={w} />;
       case 'deco': return <DecoEditor conf={w} />;
       case 'banner': return <BannerEditor conf={w} />;
@@ -656,7 +652,6 @@ function BoardPane() {
   const {
     st, patchSystem, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
-    patchVideoCat, addVideoCat, removeVideoCat, setVideoCats,
   } = useBoardSettings();
   const { boards, setBoards, patchBoard } = useBoards();
   const [catBoard, setCatBoard] = useState(MAIN_BOARD_ID);   // 말머리 편집 대상 게시판
@@ -667,11 +662,6 @@ function BoardPane() {
   const [galSecSel, setGalSec] = useState(MAIN_SEC);
   const galSec = galSecs.some(s2 => s2.id === galSecSel) ? galSecSel : MAIN_SEC;
   const galCats = galleryCatsOf(st, galSec);
-  /* 비디오 말머리 (커플홈 사용자 요청 — 갤러리처럼) — 비디오 게시판마다 따로 */
-  const vidSecs = secList('videos');
-  const [vidSecSel, setVidSec] = useState(MAIN_SEC);
-  const vidSec = vidSecs.some(s2 => s2.id === vidSecSel) ? vidSecSel : MAIN_SEC;
-  const vidCats = videoCatsOf(st, vidSec);
   const del = useConfirmDelete();
 
   const sel = boards.find(b => b.id === catBoard) ?? boards[0];
@@ -835,41 +825,6 @@ function BoardPane() {
       <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }}
         onClick={() => addGalleryCat(galSec)}>＋ 말머리 추가</button>
 
-      {/* 비디오 말머리 (커플홈 사용자 요청 — "비디오도 갤러리처럼 카테고리 만들어주고 카테고리별로 탭") — 갤러리 말머리와 같은 방식 */}
-      <h3 style={{ marginTop: 20 }}>비디오 말머리</h3>
-      <div className="d">
-        Videos 글쓰기에서 고르는 말머리 — 목록 왼쪽에 ALL / 말머리… 탭으로 뜬다 · ⠿ 드래그로 순서 · 추가·수정·삭제 자유
-        {vidSecs.length > 1 && <><br />비디오 게시판마다 따로 정합니다 — <b>손대기 전까지는 기본 게시판의 말머리를 그대로 씁니다</b></>}
-      </div>
-      {vidSecs.length > 1 && (
-        <div className="mini-seg" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
-          {vidSecs.map(s2 => (
-            <button key={s2.id} className={vidSec === s2.id ? 'on' : ''} onClick={() => setVidSec(s2.id)}>{s2.name}</button>
-          ))}
-        </div>
-      )}
-      <DragList items={vidCats} keyOf={c => c.id} onReorder={next => setVideoCats(vidSec, next)}
-        render={c => (
-          <div className="set-row" style={{ width: '100%' }}>
-            <div className="l" style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
-              <span className="drag-h">⠿</span>
-              <span style={boardBadgeStyle(c)}>{c.label || '말머리'}</span>
-            </div>
-            <div className="cp-group" style={{ justifyContent: 'flex-end' }}>
-              <KInput value={c.label} onChange={e => patchVideoCat(vidSec, c.id, { label: e.target.value })}
-                style={{ width: 100, textAlign: 'right' }} />
-              {colorCells(c, p => patchVideoCat(vidSec, c.id, p))}
-              <span className="fx" data-tip="말머리 삭제"
-                onClick={() => del.ask(`말머리 「${c.label}」를 삭제하시겠습니까?`,
-                  () => removeVideoCat(vidSec, c.id),
-                  '이미 이 말머리로 등록된 영상은 그대로 남습니다.')}>✕</span>
-            </div>
-          </div>
-        )} />
-      {vidCats.length === 0 && <div className="d" style={{ marginTop: 6 }}>아직 말머리가 없습니다 — 추가하면 Videos 목록 왼쪽에 탭이 생깁니다</div>}
-      <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }}
-        onClick={() => addVideoCat(vidSec)}>＋ 말머리 추가</button>
-
       <hr style={{ margin: '24px 0', border: 'none', borderTop: '1.5px solid var(--line)' }} />
       {/* 갤러리·다이어리 등도 여러 개로 (v2.0 사용자 요청) — 목록이 몇 개인지는 여기 한곳에서 */}
       <SectionsBlock />
@@ -880,68 +835,6 @@ function BoardPane() {
 }
 
 /** 자관 질문 탭 (v1.9) — 질문 세트(CP/NCP) 관리. 자관 상세의 QUESTIONS 섹션 추가 시 세트를 골라 넣는다 */
-/** 캐릭터 탭 (커플홈) — 캐릭터 목록 페이지를 없애서, 자관에 연결되지 않은 캐릭터는 들어갈 길이 없었다.
- *  관리자만 여기서 전체를 보고 열기·수정·삭제한다. 삭제하면 들어가 있던 자관에서도 함께 빠진다 */
-function CharPane() {
-  const router = useRouter();
-  const [chars, setChars, loaded] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
-  const [rels, setRels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
-  const pool = useMembers();
-  const del = useConfirmDelete();
-  const relsOf = (id: string) => rels.filter(r => r.members.some(m => m.charId === id));
-  // 내 캐릭터 먼저, 그다음 상대 캐릭터 — 각각은 저장 순서 그대로
-  const list = [...chars.filter(c => c.own), ...chars.filter(c => !c.own)];
-  const remove = (c: Character) => {
-    const linked = relsOf(c.id);
-    del.ask(`「${c.name}」 캐릭터를 삭제하시겠습니까?`, () => {
-      setChars(chars.filter(x => x.id !== c.id));
-      const nextRels = relsWithoutChar(rels, c.id);
-      if (nextRels) setRels(nextRels);
-    }, linked.length
-      ? `프로필·탭이 함께 삭제되고 자관 「${linked.map(r => r.name).join('」·「')}」에서도 빠집니다. 복구할 수 없습니다.`
-      : '프로필·탭이 함께 삭제되며 복구할 수 없습니다.');
-  };
-  const smallBtn = { padding: '3px 9px', fontSize: 10.5 };
-  return (
-    <div className="set-sec">
-      <h3>캐릭터</h3>
-      <div className="d">모든 캐릭터 — 자관에 연결되지 않은 캐릭터도 여기서 열거나 수정·삭제할 수 있습니다</div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-        <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }}
-          onClick={() => router.push(`/chars/new?next=${encodeURIComponent('/settings?tab=캐릭터')}`)}>＋ 캐릭터 만들기</button>
-      </div>
-      {list.map(c => {
-        const linked = relsOf(c.id);
-        const granted = (c.grants ?? []).map(g => pool.find(m => m.id === g.userId)?.nickname ?? g.userId);
-        return (
-          <div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderBottom: '1px dashed var(--line)' }}>
-            <div style={{ width: 34, aspectRatio: '3/4', borderRadius: 7, overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
-              <CroppedBlobImg fileRef={c.arts?.[0] ?? c.thumbId} crop={c.thumbCrop} ph={c.thumbClass} phStyle={phStyle([c.color])} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <b style={{ fontSize: 13 }}><span className="dot-lbl"><i className="cmt-dot" style={{ background: c.color }} />{c.name}</span></b>
-              {c.sub && <small style={{ marginLeft: 7, color: 'var(--faint)', fontSize: 11 }}>{c.sub}</small>}
-              <div style={{ fontSize: 11, color: 'var(--sub)', marginTop: 3 }}>
-                {c.own ? '내 캐릭터' : '상대 캐릭터'}
-                {linked.length > 0
-                  ? ` · 자관 ${linked.map(r => r.name).join(', ')}`
-                  : <b style={{ color: 'var(--accent)' }}> · 자관 연결 없음</b>}
-                {granted.length > 0 && ` · 권한 ${granted.join(', ')}`}
-                {c.visibility !== 'public' && ` · ${c.visibility === 'member' ? '멤버공개' : '비공개'}`}
-              </div>
-            </div>
-            <button className="btn btn-ghost" style={smallBtn} onClick={() => router.push(charPath(c))}>열기</button>
-            <button className="btn btn-ghost" style={smallBtn} onClick={() => router.push(`/chars/${c.id}/edit`)}>수정</button>
-            <button className="btn btn-ghost" style={smallBtn} onClick={() => remove(c)}>DELETE</button>
-          </div>
-        );
-      })}
-      {loaded && list.length === 0 && <p className="hint">등록된 캐릭터가 없습니다</p>}
-      {del.element}
-    </div>
-  );
-}
-
 function RelQPane() {
   const [sets, setSets] = useLocalList<RelQuestionSet>(RELQ_KEY, RELQ_SEED);
   const [selId, setSelId] = useState<string | null>(null);
@@ -1083,16 +976,7 @@ function MemberPane() {
   const [codeLoaded, setCodeLoaded] = useState(false);
   const [regVer, setRegVer] = useState(0);   // 가입 계정 삭제 후 목록 갱신용
   const [removedIds, setRemovedIds] = useState<string[]>([]);   // 서버 모드에서 방금 지운 회원
-  // 가입코드 — 서버 모드에서는 **이 자관(홈)의 코드**(homes/{id}.inviteCode), 로컬 모드는 예전 설정 키 (v2.1)
-  useEffect(() => {
-    const be = backend();
-    const home = currentHomeId();
-    if (!be || !home) { setCode(inviteCode()); setCodeLoaded(true); return; }
-    be.listHomes()
-      .then(hs => { setCode(hs.find(h => h.id === home)?.inviteCode ?? ''); })
-      .catch(() => { /* 못 받으면 빈 칸 */ })
-      .finally(() => setCodeLoaded(true));
-  }, []);
+  useEffect(() => { setCode(inviteCode()); setCodeLoaded(true); }, []);
   void regVer;
 
   const members = useMembers();
@@ -1101,6 +985,10 @@ function MemberPane() {
   const authConsoleUrl = (() => {
     const c = serverConfig();
     if (c?.kind === 'firebase') return `https://console.firebase.google.com/project/${c.projectId}/authentication/users`;
+    if (c?.kind === 'supabase') {
+      const m = c.url.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/i);
+      return m ? `https://supabase.com/dashboard/project/${m[1]}/auth/users` : '';
+    }
     return '';
   })();
   const [delMember, setDelMember] = useState<{ id: string; nickname: string } | null>(null);
@@ -1152,16 +1040,9 @@ function MemberPane() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <KInput value={code} onChange={e => setCode(e.target.value)} style={{ width: 220 }} />
           <button className="btn btn-dark" disabled={!codeLoaded}
-            onClick={async () => {
+            onClick={() => {
               if (!code.trim()) { toast('가입코드를 입력해 주세요'); return; }
-              const be = backend();
-              const home = currentHomeId();
-              if (be && home) {
-                try { await be.updateHome(home, { inviteCode: code.trim() }); }
-                catch (e) { toast(`저장하지 못했습니다 — ${(e as { message?: string })?.message ?? ''}`); return; }
-              } else {
-                setInviteCode(code);
-              }
+              setInviteCode(code);
               toast('가입코드가 변경되었습니다');
             }}>SAVE</button>
         </div>
@@ -1385,101 +1266,43 @@ function SecurityRulesRow() {
       <div className="d">
         앱이 업데이트되며 규칙이 바뀔 때가 있습니다 — 새 기능이 갑자기 안 보이거나 목록이 비어 보이거나
         저장이 거부되면 아래를 다시 적용해 보세요.{' '}
-        Firestore 콘솔의 규칙 화면에 그대로 덮어써도 안전합니다(기존 컬렉션 권한은 그대로 유지).
+        {cfg?.kind === 'firebase'
+          ? 'Firestore 콘솔의 규칙 화면에 그대로 덮어써도 안전합니다(기존 컬렉션 권한은 그대로 유지).'
+          : 'Supabase 콘솔 → SQL Editor에 통째로 붙여넣고 Run — 여러 번 실행해도 안전합니다(이미 있으면 건너뜀, 쌓아 둔 글·회원은 그대로).'}
       </div>
-      <div className="setup-row">
-        <button className="btn btn-dark" onClick={() => copy(FIRESTORE_RULES, 'fs')}>
-          {copied === 'fs' ? '복사됨 ✓' : 'Firestore 규칙 복사'}
-        </button>
-        <button className="btn btn-dark" onClick={() => copy(STORAGE_RULES, 'st')}>
-          {copied === 'st' ? '복사됨 ✓' : 'Storage 규칙 복사'}
-        </button>
-        <button className="btn btn-ghost" onClick={() => setOpen(o => !o)}>{open ? '내용 접기' : '내용 보기'}</button>
-      </div>
-      {open && (
+      {cfg?.kind === 'firebase' ? (
+        <div className="setup-row">
+          <button className="btn btn-dark" onClick={() => copy(FIRESTORE_RULES, 'fs')}>
+            {copied === 'fs' ? '복사됨 ✓' : 'Firestore 규칙 복사'}
+          </button>
+          <button className="btn btn-dark" onClick={() => copy(STORAGE_RULES, 'st')}>
+            {copied === 'st' ? '복사됨 ✓' : 'Storage 규칙 복사'}
+          </button>
+          <button className="btn btn-ghost" onClick={() => setOpen(o => !o)}>{open ? '내용 접기' : '내용 보기'}</button>
+        </div>
+      ) : (
+        /* Supabase도 여기서 바로 복사 (v2.0 포크 제보) — 예전에는 「schema.sql을 실행하라」는
+           안내 한 줄뿐이라, 규칙을 다시 적용하러 온 사람이 빈 화면을 만났다 */
+        <div className="setup-row">
+          <button className="btn btn-dark" onClick={() => copy(SCHEMA_SQL, 'sql')}>
+            {copied === 'sql' ? '복사됨 ✓' : '설치 SQL 복사'}
+          </button>
+          <button className="btn btn-ghost" onClick={() => setOpen(o => !o)}>{open ? '내용 접기' : '내용 보기'}</button>
+        </div>
+      )}
+      {open && (cfg?.kind === 'firebase' ? (
         <>
           <pre className="setup-sql">{FIRESTORE_RULES}</pre>
           <pre className="setup-sql">{STORAGE_RULES}</pre>
         </>
-      )}
+      ) : (
+        <pre className="setup-sql">{SCHEMA_SQL}</pre>
+      ))}
     </div>
   );
 }
 
 /** 무드 리스트 탭 (5.2 — 다이어리 무드: 이름/아이콘/색 추가·수정·삭제·순서) */
-/** 다이어리 구분 탭 (커플홈 사용자 요청) — 무드 말고도 일기를 나눠 보는 탭. 이름 · ⠿ 순서 · 삭제 */
-function DiaryCatPane() {
-  const [dset, patch] = useDiarySettings();
-  const [diaries] = useLocalList<DiaryPost>('ohome.diary.v1', DIARY_SEED);
-  const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
-  const { list: secList } = useSections();
-  const diarySecs = secList('diary');
-  const del = useConfirmDelete();
-  const setCats = (cats: DiaryCat[]) => patch({ cats });
-  return (
-    <div className="set-sec" style={{ marginTop: 26 }}>
-      {/* 자관 연결 (커플홈 사용자 요청) — 다이어리마다 칸을 나눌 자관. 여러 개로 만든 다이어리는 각각 고른다 */}
-      <h3>자관 연결</h3>
-      <div className="d">
-        다이어리는 연결한 자관의 왼쪽·오른쪽 캐릭터 칸으로 나뉩니다 — 고르지 않으면 첫 번째 자관.
-        다이어리를 여러 개로 만들려면 게시판 관리의 「다른 목록도 여러 개로」에서
-      </div>
-      {diarySecs.map(s => (
-        <div key={s.id} className="set-row" style={{ width: '100%' }}>
-          <div className="l"><b>{s.name}</b>{s.id === MAIN_SEC && <span className="pill" style={{ marginLeft: 8 }}>기본</span>}</div>
-          <div className="cp-group" style={{ justifyContent: 'flex-end' }}>
-            <KSelect minWidth={200} value={dset.relBySec?.[s.id] ?? ''}
-              onChange={v => {
-                const next = { ...(dset.relBySec ?? {}) };
-                if (v) next[s.id] = v; else delete next[s.id];
-                patch({ relBySec: next });
-              }}
-              options={[
-                { value: '', label: '자동 — 첫 번째 자관' },
-                ...rels.map(r => ({ value: r.id, label: r.name })),
-              ]} />
-          </div>
-        </div>
-      ))}
-
-      <hr style={{ margin: '24px 0', border: 'none', borderTop: '1.5px solid var(--line)' }} />
-      <h3>구분 탭</h3>
-      <div className="d">다이어리 위쪽에 탭으로 나오는 구분 — 일기를 쓸 때 고릅니다 · ⠿ 드래그로 순서 · AU를 연결하면 그 탭에서는 캐릭터가 그 AU 모습으로 보입니다</div>
-      <DragList items={dset.cats} keyOf={c => c.id} onReorder={setCats}
-        render={c => (
-          <div className="set-row" style={{ width: '100%' }}>
-            <div className="l" style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
-              <span className="drag-h">⠿</span>
-              <KInput value={c.name} onChange={e => setCats(dset.cats.map(x => (x.id === c.id ? { ...x, name: e.target.value } : x)))}
-                style={{ width: 160 }} />
-            </div>
-            <div className="cp-group" style={{ justifyContent: 'flex-end' }}>
-              {/* 연결할 AU (커플홈 사용자 요청) — 이 구분 탭에서는 칸 머리의 캐릭터가 그 AU 모습(이름·사진·색)으로 보인다 */}
-              <KSelect minWidth={170} maxWidth={240} value={c.auKey ?? ''}
-                onChange={v => setCats(dset.cats.map(x => (x.id === c.id ? { ...x, auKey: v || undefined } : x)))}
-                options={[
-                  { value: '', label: 'AU 없음 — 원래 설정' },
-                  ...rels.flatMap(r => r.aus.filter(a => a.id !== 'base').map(a => ({ value: `${r.id}:${a.id}`, label: `${r.name} · ${a.label}` }))),
-                ]} />
-              <small style={{ color: 'var(--faint)', fontSize: 10.5 }}>일기 {diaries.filter(d => d.catId === c.id).length}개</small>
-              <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
-                onClick={() => {
-                  const used = diaries.filter(d => d.catId === c.id).length;
-                  del.ask(`구분 「${c.name}」를 삭제하시겠습니까?`, () => setCats(dset.cats.filter(x => x.id !== c.id)),
-                    used > 0 ? `이 구분의 일기 ${used}개는 지워지지 않고 「구분 없음」으로 보입니다.` : undefined);
-                }}>DELETE</button>
-            </div>
-          </div>
-        )} />
-      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }}
-          onClick={() => setCats([...dset.cats, { id: newId(), name: '새 구분' }])}>＋ ADD</button>
-      </div>
-      {del.element}
-    </div>
-  );
-}
-
 function MoodPane() {
   const [moods, setMoods] = useLocalList<Mood>('ohome.moods.v1', MOOD_SEED);
   const [diaries] = useLocalList<DiaryPost>('ohome.diary.v1', DIARY_SEED);
@@ -1810,20 +1633,24 @@ function DataPane() {
   };
   const toggle = (k: string, v: boolean) => setPicked(p => (v ? [...new Set([...p, k])] : p.filter(x => x !== k)));
 
-  /* ---------- 데이터베이스 이전 (v2.0) — 다른 Firebase 프로젝트로 통째 옮기기 ---------- */
+  /* ---------- 데이터베이스 이전 (v2.0) — 다른 프로젝트/다른 서비스로 통째 옮기기 ---------- */
   const [migOpen, setMigOpen] = useState(false);
+  const [migKind, setMigKind] = useState<BackendKind>('supabase');
+  const [migSb, setMigSb] = useState({ url: '', anonKey: '' });
   const [migFb, setMigFb] = useState({ apiKey: '', authDomain: '', projectId: '', storageBucket: '', appId: '' });
   const [migState, setMigState] = useState<'idle' | 'checking' | 'ready' | 'running' | 'done'>('idle');
   const [migMsg, setMigMsg] = useState('');
 
-  const migCfg = (): BackendConfig => ({
+  const migCfg = (): BackendConfig => (migKind === 'firebase'
+    ? {
         kind: 'firebase',
         apiKey: migFb.apiKey.trim(),
         authDomain: migFb.authDomain.trim() || `${migFb.projectId.trim()}.firebaseapp.com`,
         projectId: migFb.projectId.trim(),
         storageBucket: migFb.storageBucket.trim() || `${migFb.projectId.trim()}.appspot.com`,
         appId: migFb.appId.trim(),
-      });
+      }
+    : { kind: 'supabase', url: migSb.url.trim(), anonKey: migSb.anonKey.trim() });
 
   const migCheck = async () => {
     const bad = validateConfig(migCfg());
@@ -1877,7 +1704,7 @@ function DataPane() {
       const u = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = u;
-      a.download = `ohome-backup${includeMembers ? '-with-members' : ''}-${todayYmd()}.zip`;
+      a.download = `ohome-backup${includeMembers ? '-with-members' : ''}-${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       URL.revokeObjectURL(u);
       toast(`백업 완료 — 데이터 ${dataCount}건 · 이미지 ${blobCount}개${includeMembers ? ' · 회원 포함' : ''}`);
@@ -1983,9 +1810,9 @@ function DataPane() {
         </div>
       </div>
 
-      {/* 데이터베이스 이전 (v2.0) — 새 Firebase 프로젝트로 통째 옮기기 */}
+      {/* 데이터베이스 이전 (v2.0) — 새 프로젝트·다른 서비스로 통째 옮기기 */}
       <div className="set-row" style={{ flexWrap: 'wrap' }}>
-        <div className="l"><b>데이터베이스 이전</b><small>다른 Firebase 프로젝트로 글·설정·이미지를 통째로 옮깁니다</small></div>
+        <div className="l"><b>데이터베이스 이전</b><small>다른 프로젝트나 다른 서비스(Supabase ↔ Firebase)로 글·설정·이미지를 통째로 옮깁니다</small></div>
         <button className="btn btn-ghost" style={{ padding: '9px 20px' }}
           onClick={() => { setMigOpen(true); setMigState('idle'); setMigMsg(''); }}>이전하기</button>
       </div>
@@ -1997,7 +1824,21 @@ function DataPane() {
           {migState === 'ready' && <button className="btn btn-accent" onClick={migRun}>이전 시작</button>}
           {migState === 'done' && <button className="btn btn-accent" onClick={migSwitch}>새 DB로 전환</button>}
         </>}>
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className="mini-seg" style={{ marginBottom: 12 }}>
+          <button className={migKind === 'supabase' ? 'on' : ''} onClick={() => setMigKind('supabase')}>Supabase</button>
+          <button className={migKind === 'firebase' ? 'on' : ''} onClick={() => setMigKind('firebase')}>Firebase</button>
+        </div>
+
+        {migKind === 'supabase' ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label className="k-label">Project URL</label>
+            <KInput value={migSb.url} onChange={e => setMigSb(s => ({ ...s, url: e.target.value }))} placeholder="https://xxxx.supabase.co" />
+            <label className="k-label">anon public key</label>
+            <KInput value={migSb.anonKey} onChange={e => setMigSb(s => ({ ...s, anonKey: e.target.value }))} />
+            <p className="hint" style={{ margin: 0 }}>새 프로젝트라면 먼저 스키마 SQL을 실행해 두세요 — 설치 화면과 같은 내용입니다.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
             <label className="k-label">설정 붙여넣기 (firebaseConfig)</label>
             <KTextarea style={{ minHeight: 84, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 11.5 }}
               onChange={e => {
@@ -2015,6 +1856,7 @@ function DataPane() {
             <div><label className="k-label">appId</label><KInput value={migFb.appId} onChange={e => setMigFb(f => ({ ...f, appId: e.target.value }))} /></div>
             <p className="hint" style={{ margin: 0 }}>새 프로젝트라면 Firestore·Storage 보안 규칙을 먼저 붙여넣어 두세요.</p>
           </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
           <button className="btn btn-dark" style={{ height: 33, padding: '0 16px', fontSize: 11 }}
@@ -2186,13 +2028,11 @@ function MenuPane() {
   // 게시판 + 여러 개로 만든 섹션 — 메뉴가 아는 「추가 항목」 전체 (v2.0)
   const { map: secMap } = useSections();
   const { links, setLinks } = useCustomLinks();   // 커스텀 링크 (v2.0 사용자 요청)
-  // 자관마다 메뉴 항목 (커플홈 사용자 요청) — 지운 자관의 항목은 정규화에서 빠진다
-  const [rels, , relsLoaded] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
   // 새 커스텀 링크 입력 폼 (v2.0 사용자 제보 — 「주소를 적으면 이름 짓기 전에 올라간다」).
   // 예전에는 ADD가 빈 행을 즉시 등록해, 주소를 치는 순간 미배치에 미완성 링크가 나타났다
   const [nlName, setNlName] = useState('');
   const [nlHref, setNlHref] = useState('');
-  const extraAll = [...boardEntries(boards), ...sectionMenuEntries(secMap), ...relMenuEntries(rels), ...linkEntries(links)];
+  const extraAll = [...boardEntries(boards), ...sectionMenuEntries(secMap), ...linkEntries(links)];
   const defLabel = (href: string) => menuLabelFor(href, extraAll) ?? href;
 
   // 드래프트 — 모든 편집(삭제 포함)은 SAVE를 눌러야 실제 메뉴에 반영 (v1.9 사용자 피드백)
@@ -2272,7 +2112,7 @@ function MenuPane() {
   /* 트리 정규화(저장본 대상) — 사라진 기능(삭제된 게시판) 제거.
      **새로 만든 것을 자동으로 넣지는 않는다** (v2.0 사용자 확정) — 미배치에 머물게 둔다 */
   useEffect(() => {
-    if (!msLoaded || !bLoaded || !relsLoaded) return;   // 자관 목록이 오기 전에 자관 항목을 「사라진 기능」으로 지우면 안 된다
+    if (!msLoaded || !bLoaded) return;
     let next: MenuGroupNode[] = saved
       .map(g => (g.href
         ? (menuLabelFor(g.href, extraAll) === null ? null : g)
@@ -2280,7 +2120,7 @@ function MenuPane() {
       .filter((g): g is MenuGroupNode => !!g);
     if (JSON.stringify(next) !== JSON.stringify(saved)) patch({ tree: next });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msLoaded, bLoaded, relsLoaded, boards, rels, ms.tree]);
+  }, [msLoaded, bLoaded, boards, ms.tree]);
 
   // 미배치 = 트리에 없는 기능 — 메뉴에 노출되지 않음 (데이터는 보존)
   const placedSet = new Set(tree.flatMap(g => (g.href ? [g.href] : g.items.map(i => i.href))));
@@ -2340,68 +2180,6 @@ function MenuPane() {
         { value: 'admin', label: `${label}: 관리자` },
       ]} />
   );
-  /* 게시판 글쓰기 권한 (커플홈 사용자 요청 — 갤러리에만 있던 「가입자/관리자 + 글쓰기 멤버」를 모든 게시판에).
-     값은 게시판마다 다른 곳에 산다 — 리스트는 게시판 설정 permWrite, 로드비 기본 페이지는 roadUpload,
-     나머지(Videos·감상타래·캐릭터·도토리·플레이기록·RP LOG·추가 로드비)는 메뉴 설정 writePerm[키] — 멤버 선택은 전부 writeMembers[키] */
-  const setWriteMembers = (key: string, n: string[]) => {
-    const next = { ...ms.writeMembers };
-    if (n.length) next[key] = n; else delete next[key];
-    return next;
-  };
-  /** 「글쓰기 멤버」 버튼 — 가입자 권한일 때만. 체크한 회원(+관리자)만 쓰게 좁힌다 */
-  const writeMembersBtn = (key: string, perm: MenuPerm, what: string) => {
-    if (perm === 'admin') return null;
-    const ids = ms.writeMembers?.[key];
-    return (
-      <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
-        onClick={() => setMemAsk({
-          ids: ids ?? [],
-          desc: `체크한 회원(그리고 관리자)만 이 게시판에 ${what}할 수 있습니다 — 비우면 로그인한 모든 회원`,
-          apply: n => patch({ writeMembers: setWriteMembers(key, n) }),
-        })}>
-        {ids?.length ? `${what} 멤버 ${ids.length}명` : `${what} 멤버`}
-      </button>
-    );
-  };
-  /** 멤버 버튼 + 가입자/관리자 셀렉트. 관리자 전용으로 바꾸면 멤버 선택은 함께 지운다 — 몰래 남아 있지 않게 (갤러리와 같은 규칙) */
-  const writePermUI = (key: string, perm: MenuPerm, setPerm: (v: MenuPerm) => void, what: string) => (
-    <>
-      {writeMembersBtn(key, perm, what)}
-      <KSelect minWidth={110} value={perm}
-        onChange={v => {
-          if (v === 'admin' && ms.writeMembers?.[key]) patch({ writeMembers: setWriteMembers(key, []) });
-          setPerm(v as MenuPerm);
-        }}
-        options={[
-          { value: 'member', label: `${what}: 가입자` },
-          { value: 'admin', label: `${what}: 관리자` },
-        ]} />
-    </>
-  );
-  /** 메뉴 주소 → 글쓰기 권한 저장 키·지금 값·기본값 (writePerm에 사는 게시판만 · 아니면 null) */
-  const writePermOf = (href: string): { key: string; perm: MenuPerm; what: string } | null => {
-    const [path, query = ''] = href.split('?');
-    const sq = new URLSearchParams(query).get('s');
-    let secId = MAIN_SEC;
-    if (sq) {
-      // 메뉴 주소에는 별명(slug)이 적혀 있을 수 있다 — id로 통일해 저장
-      const kind = (Object.keys(SECTION_META) as SectionKind[]).find(k => SECTION_META[k].href === path);
-      const sec = kind ? sectionsOf(secMap, kind).find(s2 => s2.id === sq || s2.slug === sq) : undefined;
-      if (!sec) return null;
-      secId = sec.id;
-    }
-    const def: MenuPerm | null =
-      path === '/tchars' || path === '/playlog' ? 'admin'
-      : path === '/videos' || path === '/threads' || path === '/dotori' || path === '/log' ? 'member'   // RP LOG — 등록 권한이 있는 회원은 수정도 (trpgPerm.ts)
-      // 추가 로드비 — 기본 페이지의 공통값(roadUpload)을 따르되 따로 정할 수 있다 (기본 페이지는 아래 /loadb 가지에서)
-      : path === '/loadb' && secId !== MAIN_SEC ? (ms.roadUpload === 'admin' ? 'admin' : 'member')
-      : null;
-    if (def === null) return null;
-    const key = writeKeyOf(path, secId);
-    const what = path === '/loadb' ? '업로드' : path === '/tchars' || path === '/playlog' || path === '/dotori' || path === '/log' ? '등록' : '글쓰기';
-    return { key, perm: ms.writePerm?.[key] ?? def, what };
-  };
-
   // 메뉴별 부속 설정 — 기본 탭용 (표시 방식 등)
   const extraFor = (href: string) => {
     switch (href) {
@@ -2445,8 +2223,12 @@ function MenuPane() {
       if (!bd) return null;
       return (
         <>
-          {/* 글쓰기 — 게시판 설정 permWrite + 「글쓰기 멤버」 (커플홈) */}
-          {writePermUI(boardHref(bd.id), bd.permWrite as MenuPerm, v => patchBoard(bd.id, { permWrite: v as BoardPerm }), '글쓰기')}
+          <KSelect minWidth={110} value={bd.permWrite}
+            onChange={v => patchBoard(bd.id, { permWrite: v as BoardPerm })}
+            options={[
+              { value: 'member', label: '글쓰기: 가입자' },
+              { value: 'admin', label: '글쓰기: 관리자' },
+            ]} />
           <KSelect minWidth={110} value={bd.permComment}
             onChange={v => patchBoard(bd.id, { permComment: v as BoardPerm })}
             options={[
@@ -2460,8 +2242,7 @@ function MenuPane() {
     if (href === '/loadb') {
       return (
         <>
-          {writeMembersBtn('/loadb', ms.roadUpload, '업로드')}
-          {permSel('업로드', ms.roadUpload, v => patch({ roadUpload: v, ...(v === 'admin' ? { writeMembers: setWriteMembers('/loadb', []) } : {}) }))}
+          {permSel('업로드', ms.roadUpload, v => patch({ roadUpload: v }))}
           {permSel('댓글', ms.roadComment, v => patch({ roadComment: v }))}
         </>
       );
@@ -2504,9 +2285,6 @@ function MenuPane() {
         </>
       );
     }
-    // 그 밖의 게시판 (Videos·감상타래·캐릭터·도토리·플레이기록·RP LOG·추가 로드비) — 메뉴 설정 writePerm (커플홈 사용자 요청)
-    const wp = writePermOf(href);
-    if (wp) return writePermUI(wp.key, wp.perm, v => patch({ writePerm: { ...ms.writePerm, [wp.key]: v } }), wp.what);
     return null;
   };
 
@@ -2566,8 +2344,6 @@ function MenuPane() {
         <div>
           <div className="d">
             공개범위는 메뉴 노출을 정합니다(전부 보임 / 비로그인 숨김 / 관리자만) — SAVE를 눌러야 반영 · 글쓰기·댓글 권한은 즉시 반영
-            <br />
-            글쓰기 권한은 게시판마다(갤러리·리스트·로드비·Videos·감상타래·캐릭터·도토리·플레이기록) 가입자/관리자로 — <b>글쓰기 멤버</b>로 특정 회원만 쓰게 좁힐 수 있습니다
             <br />
             「비로그인 숨김」 옆 <b>멤버 선택</b>으로 특정 회원에게만 보이게 좁힐 수 있습니다 — 비우면 로그인한 모든 회원
             <br />
@@ -2830,7 +2606,7 @@ function MenuPane() {
       {del.element}
       {/* 기본 구성 리셋 확인 (v1.9) — 드래프트만 교체, SAVE로 확정 */}
       <ConfirmModal open={resetAsk} title="메뉴를 기본 구성으로 되돌리시겠습니까?"
-        body="기본 제공 메뉴 구성(자놀·게시판·TRPG·기록)으로 편집 화면이 바뀝니다. SAVE를 눌러야 실제 메뉴에 반영됩니다."
+        body="기본 제공 메뉴 구성(자놀·게시판·TRPG·커미션·기록·방명록)으로 편집 화면이 바뀝니다. SAVE를 눌러야 실제 메뉴에 반영됩니다."
         onClose={() => setResetAsk(false)}
         buttons={[
           { label: 'RESET', kind: 'dark', onClick: () => { setDraft(defaultTree()); setDraftRemoved([]); setResetAsk(false); } },
@@ -3182,22 +2958,15 @@ function BgmTrackRow({ t, onPatch, onDelete }: {
 
 /** BGM 탭 (5.2 v1.9) — 곡 목록 등록(미니 플레이어 리스트에 노출) + 재생 설정 */
 function BgmPane() {
-  const { state, lists, setTracks, addTrack, removeTrack, addList, renameList, removeList, setSettings } = useBgm();
+  const { state, setTracks, addTrack, removeTrack, setSettings } = useBgm();
   const toast = useToast();
   const del = useConfirmDelete();
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [url, setUrl] = useState('');
-  /* 플레이리스트 여러 개 (커플홈 사용자 요청) — 고른 목록의 곡만 아래에서 다룬다 */
-  const [cur, setCur] = useState(MAIN_LIST);
-  const curList = lists.find(l => l.id === cur) ?? lists[0];
-  const [newName, setNewName] = useState('');
-  const [nameDraft, setNameDraft] = useState('');
-  useEffect(() => { setNameDraft(curList?.name ?? ''); }, [cur, curList?.name]);
-  const commitName = () => { if (nameDraft.trim() && nameDraft.trim() !== curList?.name) renameList(cur, nameDraft); };
 
   const add = () => {
-    if (addTrack(title, desc, url, cur)) {
+    if (addTrack(title, desc, url)) {
       setTitle(''); setDesc(''); setUrl('');
       toast('곡이 추가되었습니다');
     } else {
@@ -3208,48 +2977,18 @@ function BgmPane() {
   return (
     <div className="set-sec">
       <h3>BGM</h3>
-      <div className="d">유튜브 곡 목록 관리 — 미니 플레이어 리스트에 노출 · 화면은 숨기고 소리만 재생 · 플레이리스트를 여러 개 만들면 플레이어의 곡 목록에서 고를 수 있습니다</div>
-
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        <div className="mini-seg" style={{ flexWrap: 'wrap' }}>
-          {lists.map(l => (
-            <button key={l.id} className={l.id === cur ? 'on' : ''} onClick={() => setCur(l.id)}>
-              {l.name} <small style={{ opacity: .6 }}>{l.tracks.length}</small>
-            </button>
-          ))}
-        </div>
-        <KInput placeholder="새 플레이리스트 이름" value={newName} onChange={e => setNewName(e.target.value)} style={{ maxWidth: 160 }}
-          onKeyDown={e => { if (e.key === 'Enter') { const id = addList(newName); if (id) { setCur(id); setNewName(''); } } }} />
-        <button className="btn btn-ghost" style={{ whiteSpace: 'nowrap' }}
-          onClick={() => {
-            const id = addList(newName);
-            if (id) { setCur(id); setNewName(''); toast('플레이리스트를 만들었습니다 — 아래에서 곡을 넣어 주세요'); }
-            else toast('플레이리스트 이름을 입력해 주세요');
-          }}>＋ 플레이리스트</button>
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-        <span className="cp-lb">이름</span>
-        <KInput value={nameDraft} onChange={e => setNameDraft(e.target.value)} onBlur={commitName}
-          onKeyDown={e => { if (e.key === 'Enter') commitName(); }} style={{ maxWidth: 160 }} />
-        {cur !== MAIN_LIST && (
-          <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
-            onClick={() => del.ask(`「${curList?.name}」 플레이리스트를 삭제하시겠습니까? (곡 ${curList?.tracks.length ?? 0}개)`, () => { removeList(cur); setCur(MAIN_LIST); })}>
-            DELETE
-          </button>
-        )}
-      </div>
+      <div className="d">유튜브 곡 목록 관리 — 미니 플레이어 리스트에 노출 · 화면은 숨기고 소리만 재생</div>
 
       <DragList
-        items={curList?.tracks ?? []}
+        items={state.tracks}
         keyOf={t => t.id}
-        onReorder={next => setTracks(next, cur)}
+        onReorder={setTracks}
         render={t => (
           <BgmTrackRow t={t}
-            onPatch={p => setTracks((curList?.tracks ?? []).map(x => (x.id === t.id ? { ...x, ...p } : x)), cur)}
-            onDelete={() => del.ask(`곡 「${t.title}」을 삭제하시겠습니까?`, () => removeTrack(t.id, cur))} />
+            onPatch={p => setTracks(state.tracks.map(x => (x.id === t.id ? { ...x, ...p } : x)))}
+            onDelete={() => del.ask(`곡 「${t.title}」을 삭제하시겠습니까?`, () => removeTrack(t.id))} />
         )}
       />
-      {(curList?.tracks.length ?? 0) === 0 && <p className="hint">이 플레이리스트에 곡이 없습니다 — 아래에서 추가</p>}
       {del.element}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
@@ -3270,19 +3009,6 @@ function BgmPane() {
           <button className={state.settings.position === 'bl' ? 'on' : ''} onClick={() => setSettings({ position: 'bl' })}>왼쪽 아래</button>
         </div>
       </div>
-      {/* PC에서도 하단 바 (커플홈 사용자 요청) — 모바일 바와 같은 모양, 접기·볼륨 생략 */}
-      <div className="set-row">
-        <div className="l"><b>PC에서도 하단 바</b><small>모바일처럼 화면 아래에 붙는 슬림 바로 (레코드판·볼륨·접기 없음)</small></div>
-        <KToggle checked={!!state.settings.dock} onChange={v => setSettings({ dock: v })} />
-      </div>
-      {lists.length > 1 && (
-        <div className="set-row">
-          <div className="l"><b>처음 재생할 플레이리스트</b><small>방문자가 플레이어에서 바꾼 선택은 그 브라우저에만 기억됩니다</small></div>
-          <KSelect minWidth={150} value={lists.some(l => l.id === state.settings.defList) ? state.settings.defList! : MAIN_LIST}
-            onChange={v => setSettings({ defList: v === MAIN_LIST ? undefined : v })}
-            options={lists.map(l => ({ value: l.id, label: l.name }))} />
-        </div>
-      )}
       <div className="set-row">
         <div className="l"><b>셔플</b></div>
         <KToggle checked={state.settings.shuffle} onChange={v => setSettings({ shuffle: v })} />
@@ -3600,21 +3326,18 @@ function SettingsInner() {
             <MenuPane />
           ) : tab === '게시판 관리' ? (
             <BoardPane />
-          ) : tab === '캐릭터' ? (
-            <CharPane />
           ) : tab === '자관 질문' ? (
             <RelQPane />
+          ) : tab === '커미션' ? (
+            <CommPane />
           ) : tab === 'TRPG' ? (
             <TrpgPane />
           ) : tab === '감상타래' ? (
             <ThreadPane />
           ) : tab === '메모장' ? (
             <MemoPane />
-          ) : tab === '다이어리' ? (
-            <>
-              <MoodPane />
-              <DiaryCatPane />
-            </>
+          ) : tab === '무드 리스트' ? (
+            <MoodPane />
           ) : tab === 'BGM' ? (
             <BgmPane />
           ) : tab === '폰트' ? (

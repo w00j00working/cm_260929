@@ -12,11 +12,11 @@ import { Modal } from '@/components/ui/Modal';
 import { KTextarea, KSelect, KStep, KCheck } from '@/components/ui/Kit';
 import { ColorField } from '@/components/ui/ColorField';
 import { useFonts } from '@/lib/fontStore';
-import { BannerEditor, BannerSlide, DEMO_SLIDES, DdayEditor, DdayTextSettings, DecoEditor, TodoEditor, TodoSetItem } from '@/components/main/widgetEditors';
+import { BannerEditor, BannerSlide, DEMO_SLIDES, DdayEditor, DecoEditor, TodoEditor, TodoSetItem } from '@/components/main/widgetEditors';
 import { CroppedBlobImg, CropValue } from '@/components/ui/CropEditor';
 import { useLocalList } from '@/lib/postStore';
 import { RoadItem, ROAD_SEED, BackupPost, BACKUP_SEED } from '@/lib/galleryStore';
-import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint, diaryOrder } from '@/lib/diaryStore';
+import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint } from '@/lib/diaryStore';
 import { useSched, eventColor } from '@/lib/schedStore';
 import { StickyMemo, MEMO_SEED, MEMO_SIZE_W, useMemoSettings } from '@/lib/memoStore';
 import { BlobImg, useBlobUrl } from '@/lib/blobStore';
@@ -173,7 +173,7 @@ export function DiaryWidget() {
   const latest = posts
     .filter(p => canViewHref(menuSet, sectionHref('diary', p.secId ?? MAIN_SEC), viewer))
     .filter(p => p.visibility === 'public' || (p.visibility === 'member' && !!user))
-    .sort(diaryOrder)   // 다이어리 페이지와 같은 순서 — 같은 날은 쓴 순서
+    .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 3);
   if (!canSee) return null;   // 메뉴가 비공개면 위젯 자체를 띄우지 않는다 (v2.0)
   return (
@@ -239,28 +239,17 @@ export function LatestWidget() {
 }
 
 /* ---------- D-DAY (4.12 — 스케줄러 연동은 3차) ---------- */
-interface DdayItem { id?: string; title: string; date: string; plusOne?: boolean; text?: string }
-/** count: 날 수 그 자체 (텍스트형 「123일」·[[Dday]] 치환용) — 지난 날은 D+n의 n, 남은 날은 D-n의 n, 당일 0(+1D면 1) */
-function ddayLabel(date: string, plusOne?: boolean): { label: string; passed: boolean; near: boolean; count: number } {
+interface DdayItem { title: string; date: string; plusOne?: boolean }
+function ddayLabel(date: string, plusOne?: boolean): { label: string; passed: boolean; near: boolean } {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const d = new Date(date + 'T00:00:00');
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
   // +1 Day: 시작일을 1일로 세는 기념일 카운트 (커플 기념일 등) — 당일 = D+1
-  if (plusOne && diff <= 0) return { label: `D+${-diff + 1}`, passed: true, near: false, count: -diff + 1 };
-  if (diff === 0) return { label: 'D-DAY', passed: false, near: true, count: 0 };
+  if (plusOne && diff <= 0) return { label: `D+${-diff + 1}`, passed: true, near: false };
+  if (diff === 0) return { label: 'D-DAY', passed: false, near: true };
   return diff > 0
-    ? { label: `D-${diff}`, passed: false, near: diff <= 7, count: diff }
-    : { label: `D+${-diff}`, passed: true, near: false, count: -diff };
-}
-/** 텍스트형 날짜 글씨 (커플홈 사용자 요청) — 고정: D+123 / 123일 · 자유: 적어 둔 문장의 [[Dday]] 자리에 날 수 */
-function ddayText(it: DdayItem, format: 'fixed' | 'free', numStyle: 'dplus' | 'days'): string {
-  const d = ddayLabel(it.date, it.plusOne);
-  if (format === 'free') return (it.text ?? '').replace(/\[\[\s*d-?day\s*\]\]/gi, String(d.count));
-  if (numStyle === 'days') {
-    if (d.passed) return `${d.count}일`;
-    return d.count === 0 ? 'D-DAY' : `D-${d.count}`;   // 아직 안 온 날은 「n일」로 셀 게 없어 D-n 그대로
-  }
-  return d.label;
+    ? { label: `D-${diff}`, passed: false, near: diff <= 7 }
+    : { label: `D+${-diff}`, passed: true, near: false };
 }
 
 export function DdayWidget({ conf }: { conf: WidgetConf }) {
@@ -274,47 +263,14 @@ export function DdayWidget({ conf }: { conf: WidgetConf }) {
   const dFontId = (conf.settings.fontId as string | undefined) ?? 'serif';
   const dColor = conf.settings.color as string | undefined;
   useEditEvent(conf.id, () => setOpen(true));   // 편집모드 우클릭 → 설정 (v1.9)
-  const s = conf.settings as DdayTextSettings;
-  void editOn;
-  /* 텍스트형 = 별도 위젯 종류 ddaytext (여러 개 추가 가능) — 패널·리스트 줄 없이 글씨만: 제목(폰트1) + 날짜 글씨(폰트2).
-     고정 형식은 D+123 / 123일, 자유 형식은 적어 둔 문장(「사랑한지 [[Dday]]일 째」)의 [[Dday]] 자리에 날 수.
-     관리창은 편집모드 우클릭 → 설정으로만 연다 (사용자 요청 — 평소 클릭에 열리는 게 번거롭다) */
-  if (conf.type === 'ddaytext') {
-    const align = s.align ?? 'center';
-    return (
-      <div className="dday-text" style={{ textAlign: align }}>
-        {items.map((it, i) => (
-          <div className="dday-tx" key={it.id ?? `${it.date}|${i}`}>
-            {it.title && (
-              <div className="t" style={{
-                fontFamily: s.titleFontId ? familyOf(s.titleFontId) : undefined,
-                fontSize: s.titleSize ? `calc(${s.titleSize}px*var(--fs,1))` : undefined,
-                color: s.titleColor,
-              }}>{it.title}</div>
-            )}
-            <div className="n" style={{
-              fontFamily: familyOf(dFontId),
-              fontSize: s.textSize ? `calc(${s.textSize}px*var(--fs,1))` : undefined,
-              color: dColor,
-            }}>{ddayText(it, s.format ?? 'fixed', s.numStyle ?? 'dplus')}</div>
-          </div>
-        ))}
-        {items.length === 0 && <p className="hint">{isAdmin ? '등록된 D-day가 없습니다 — 편집모드에서 우클릭 → 설정' : ''}</p>}
-        <Modal open={open} onClose={() => setOpen(false)} title="D-day 관리"
-          desc="추가 · 수정 · 삭제 · ⠿ 드래그로 순서 조정 — 환경설정 「위젯」에서도 관리 가능"
-          actions={<button className="btn btn-dark" onClick={() => setOpen(false)}>CLOSE</button>}>
-          {open && <DdayEditor conf={conf} />}
-        </Modal>
-      </div>
-    );
-  }
   return (
-    <div className="panel widget">
-      <h4>D-DAY</h4>
-      {items.map((it, i) => {
+    <div className="panel widget" style={{ cursor: isAdmin ? 'pointer' : undefined }}
+      onClick={e => { if ((e.target as HTMLElement).closest('.modal-ov')) return; if (isAdmin && !editOn) setOpen(true); }}>
+      <h4>D-DAY {isAdmin && <span className="more">관리 ›</span>}</h4>
+      {items.map(it => {
         const d = ddayLabel(it.date, it.plusOne);
         return (
-          <div className="dday-row" key={it.id ?? `${it.title}|${i}`}>
+          <div className="dday-row" key={it.title}>
             <span>{it.title}</span>
             <b className={d.near && !dColor ? 'd-red' : ''}
               style={{ fontFamily: familyOf(dFontId), color: dColor }}>{d.label}</b>
@@ -388,11 +344,7 @@ export function UpcomingWidget() {
   const canSee = list('sched').some(s => seeSec(s.id));
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  /* 오늘 포함 이후 일정 — 매년 반복은 다음 번 날짜로 환산해 가장 가까운 3개.
-     앞으로 30일 안의 것만 (커플홈 사용자 제보 — 올해 치가 막 지난 매년 일정이 내년 날짜로 끼어들어
-     「09.28」처럼 지난 일정이 맨 아래 붙은 것으로 보였다) */
-  const limit = new Date(today); limit.setDate(limit.getDate() + 30);
-  const limitStr = `${limit.getFullYear()}-${String(limit.getMonth() + 1).padStart(2, '0')}-${String(limit.getDate()).padStart(2, '0')}`;
+  // 오늘 포함 이후 일정 — 매년 반복은 올해 날짜로 환산해 가장 가까운 3개
   const upcoming = st.events
     .filter(e => seeSec(e.secId))
     .filter(e => isAdmin || e.visibility === 'public' || (e.visibility === 'member' && !!user))
@@ -404,7 +356,7 @@ export function UpcomingWidget() {
       }
       return { e, d };
     })
-    .filter(x => x.d >= todayStr && x.d <= limitStr)
+    .filter(x => x.d >= todayStr)
     .sort((a, b) => a.d.localeCompare(b.d))
     .slice(0, 3);
   if (!canSee) return null;   // 메뉴가 비공개면 위젯 자체를 띄우지 않는다 (v2.0)
@@ -707,8 +659,7 @@ export function renderWidget(conf: WidgetConf) {
     case 'memo': return <MemoWidget conf={conf} />;
     case 'diary': return <DiaryWidget />;
     case 'latest': return <LatestWidget />;
-    case 'dday':
-    case 'ddaytext': return <DdayWidget conf={conf} />;
+    case 'dday': return <DdayWidget conf={conf} />;
     case 'todo': return <TodoWidget conf={conf} />;
     case 'upcoming': return <UpcomingWidget />;
     case 'freetext': return <FreeTextWidget conf={conf} />;

@@ -10,7 +10,7 @@ import { getRawSetting, setSetting } from './settingStore';
 export type WidgetType =
   | 'banner' | 'member'                 // 고정 요소 (삭제 불가)
   | 'menu' | 'memo' | 'diary' | 'latest'
-  | 'dday' | 'ddaytext' | 'todo' | 'upcoming' | 'freetext' | 'deco' | 'memoboard'   // ddaytext: 단일(텍스트형) D-day — 여러 개
+  | 'dday' | 'todo' | 'upcoming' | 'freetext' | 'deco' | 'memoboard'
   | 'apply';   // 'image'는 deco(장식 이미지+링크)로 일원화 (v1.9) · apply = 커미션 신청자 (v2.0)
 
 export interface WidgetConf {
@@ -47,8 +47,7 @@ export const WIDGET_META: Record<WidgetType, { title: string; desc: string }> = 
   memo: { title: 'MEMO', desc: '관리자 메모 (클릭 시 관리 모달)' },
   diary: { title: 'DIARY', desc: '최근 일기 (무드 아이콘 · 비공개 미노출)' },
   latest: { title: 'LATEST', desc: '최신 그림 3장' },
-  dday: { title: 'D-DAY', desc: '디데이 목록 — 리스트형 (하나만)' },
-  ddaytext: { title: 'D-DAY 텍스트', desc: '디데이 글씨만 — 단일형 (여러 개 추가 가능)' },
+  dday: { title: 'D-DAY', desc: '디데이 목록' },
   todo: { title: 'TO-DO', desc: '관리자 투두 (방문자는 열람만)' },
   upcoming: { title: 'UPCOMING', desc: '다가오는 일정' },
   freetext: { title: '자유 텍스트', desc: '패널 없이 문구만' },
@@ -58,7 +57,7 @@ export const WIDGET_META: Record<WidgetType, { title: string; desc: string }> = 
 };
 
 /** 같은 종류를 여러 개 추가할 수 있는 위젯 (v1.9 사용자 확정 — 나머지는 하나만) */
-export const MULTI_TYPES: WidgetType[] = ['freetext', 'deco', 'banner', 'ddaytext'];   // banner: v2.0 사용자 요청 — 슬라이드 배너 여러 개 · ddaytext: 단일 D-day 여러 개
+export const MULTI_TYPES: WidgetType[] = ['freetext', 'deco', 'banner'];   // banner: v2.0 사용자 요청 — 슬라이드 배너 여러 개
 
 /** 위젯 표시 이름 — 중복 추가 가능한 위젯이 2개 이상이면 번호를 붙여 구분 (v1.9) */
 export function widgetLabel(widgets: WidgetConf[], w: WidgetConf): string {
@@ -93,13 +92,8 @@ const STORAGE_KEY = 'ohome.main.v1';
 /** 편집모드를 지원하는 페이지 (v1.9 — 카드 그리드 드래그 정렬 포함)
  *  /trpg 로그 백업이 빠져 있던 것은 실수 — 드래그 정렬·목록 숨김 확인 모두 이 토글이 있어야 켜진다
  *  (v2.0 사용자 발견 — 목록 숨김 기능을 만들다 보니 편집모드 자체가 이 페이지에서 켜지지 않는 걸 발견) */
-const EDIT_PAGES = ['/', '/gallery', '/dotori', '/tchars', '/playlog', '/log'];
-const EDIT_PAGE_NAMES = '메인 · 갤러리 · 도토리 · TRPG 캐릭터 · 플레이기록 · RP LOG · 자관';
-/** 관리 버튼만 켜고 끄는 편집모드 (커플홈 사용자 요청 — 「자관의 관리자 버튼도 편집모드를 켰을 때만,
- *  깔끔한 화면을 보려고 로그아웃하기 귀찮다」). 배치 스냅샷·종료 확인 없이 그냥 켜고 끈다.
- *  자관 화면(/rels/<id>)에서 켜고, 자관·캐릭터 영역(/rels/… · /chars/…)을 벗어나면 저절로 꺼진다 */
-const isToolPage = (p: string) => /^\/rels\/(?!new$)[^/]+$/.test(p);
-const inToolArea = (p: string) => /^\/(rels|chars)\//.test(p);
+const EDIT_PAGES = ['/', '/comm-apply', '/chars', '/rels', '/comm', '/gallery', '/dotori', '/tchars', '/playlog', '/trpg'];
+const EDIT_PAGE_NAMES = '메인 · 신청자 리스트 · 캐릭터 · 자관 · 커미션 · 갤러리 · 도토리 · TRPG 캐릭터 · 플레이기록 · TRPG 로그';
 
 interface MainCtx {
   state: MainState;
@@ -128,7 +122,6 @@ export function MainStoreProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [state, setState] = useState<MainState>(DEFAULT_STATE);
   const [editOn, setEditOn] = useState(false);
-  const editKind = useRef<'layout' | 'tools'>('layout');   // 켠 편집모드의 종류 — tools는 스냅샷·확인 없음
   const [gridOn, setGridOn] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -148,9 +141,7 @@ export function MainStoreProvider({ children }: { children: React.ReactNode }) {
         for (const w of parsed.widgets) {
           if ((w.type as string) === 'image') continue;
           if (!w.enabled && !w.fixed) { removed.add(w.id); continue; }
-          // D-day 텍스트형은 이제 별도 위젯(ddaytext) — 예전에 mode: 'text'로 바꿔 둔 D-day는 그쪽으로 옮긴다
-          const t = w.type === 'dday' && (w.settings as { mode?: string })?.mode === 'text' ? { ...w, type: 'ddaytext' as const } : w;
-          kept.push(t.enabled ? t : { ...t, enabled: true });
+          kept.push(w.enabled ? w : { ...w, enabled: true });
         }
         const ids = new Set(kept.map(w => w.id));
         // 삭제한 기본 위젯은 병합으로 되살리지 않음
@@ -173,14 +164,7 @@ export function MainStoreProvider({ children }: { children: React.ReactNode }) {
     document.body.classList.toggle('edit-on', editOn);
   }, [editOn]);
 
-  // 관리 버튼 편집모드는 자관·캐릭터 영역을 벗어나면 저절로 끈다 — 다른 페이지에서 「편집중」만 남지 않게
-  useEffect(() => {
-    if (editOn && editKind.current === 'tools' && !inToolArea(pathname)) setEditOn(false);
-  }, [pathname, editOn]);
-
   const startEdit = useCallback(() => {
-    if (isToolPage(pathname)) { editKind.current = 'tools'; setEditOn(true); return; }   // 모바일에서도 된다
-    editKind.current = 'layout';
     if (window.matchMedia('(max-width:620px)').matches) {
       setNotice('모바일에서는 편집모드를 사용할 수 없습니다. PC에서 해주세요.');
       return;
@@ -210,23 +194,17 @@ export function MainStoreProvider({ children }: { children: React.ReactNode }) {
 
   const toggleEdit = useCallback(() => {
     if (!isAdmin) return;
-    if (!editOn) startEdit();
-    else if (editKind.current === 'tools') setEditOn(false);   // 저장할 게 없으니 묻지 않는다
-    else setExitOpen(true);
+    if (editOn) setExitOpen(true);
+    else startEdit();
   }, [isAdmin, editOn, startEdit]);
 
   const requestExit = useCallback((pendingHref?: string) => {
-    if (editKind.current === 'tools') {
-      setEditOn(false);
-      if (pendingHref) router.push(pendingHref);
-      return;
-    }
     pendingNav.current = pendingHref ?? null;
     setExitOpen(true);
-  }, [router]);
+  }, []);
 
   const guardNav = useCallback((href: string) => {
-    if (!editOn || editKind.current === 'tools') return false;   // 관리 버튼 모드는 이동을 막지 않는다
+    if (!editOn) return false;
     requestExit(href);
     return true;
   }, [editOn, requestExit]);
@@ -252,7 +230,7 @@ export function MainStoreProvider({ children }: { children: React.ReactNode }) {
       const w: WidgetConf = {
         id, type, col, enabled: true, tx: 0, ty: 0,
         ax: colX[col], ay: maxY,
-        settings: type === 'freetext' ? { text: '자유 텍스트' } : type === 'ddaytext' ? { mode: 'text', items: [] } : {},
+        settings: type === 'freetext' ? { text: '자유 텍스트' } : {},
       };
       return { ...s, widgets: [...s.widgets, w], mobileOrder: [...s.mobileOrder, id] };
     });
@@ -295,7 +273,7 @@ export function MainStoreProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <Ctx.Provider value={{
-      state, editOn, editAvailable: EDIT_PAGES.includes(pathname) || isToolPage(pathname), gridOn, setGridOn, toggleEdit, requestExit, guardNav,
+      state, editOn, editAvailable: EDIT_PAGES.includes(pathname), gridOn, setGridOn, toggleEdit, requestExit, guardNav,
       updateWidget, addWidget, removeWidget, setLayoutMode, setMobileOff, setMobileOrder, saveNow, resetMain,
     }}>
       {children}

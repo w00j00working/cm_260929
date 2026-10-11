@@ -12,12 +12,10 @@ import { TipLayer } from '@/components/ui/TipLayer';
 import { CursorLayer } from '@/components/shell/CursorLayer';
 import { ImgProtect } from '@/components/shell/ImgProtect';
 import { SetupGate } from '@/components/shell/SetupGate';
-import { HomeGate } from '@/components/shell/HomeGate';
 import { DocTitle } from '@/components/shell/DocTitle';
 import { DocIcon } from '@/components/shell/DocIcon';
 import { SettingSync } from '@/components/shell/SettingSync';
 import { ListSync } from '@/components/shell/ListSync';
-import { MsgSound } from '@/components/shell/MsgSound';
 import { UploadBusy } from '@/components/shell/UploadBusy';
 import { SpellCheck } from '@/components/shell/SpellCheck';
 import { PageFrame } from '@/lib/pageRefresh';
@@ -86,8 +84,6 @@ if(navigator.userAgent.indexOf('Whale/')>-1){document.documentElement.style.colo
                 <BgmStoreProvider>
                   {/* 설치 초기 화면 — 첫 실행이면 관리자·게스트 설정/백업 복원만 표시 (v1.9) */}
                   <SetupGate>
-                  {/* 홈(자관) 게이트 (v2.1) — 비로그인: 로그인 카드 · 총관리자: 자관 리스트 · 회원: 자기 자관 */}
-                  <HomeGate>
                   <TopBar />
                   {/* 앱 셸: 스크롤은 이 영역 안에서만 (7장) */}
                   {/* PageFrame: 같은 메뉴를 다시 누르면 이 안쪽만 remount (BGM·상단바는 유지, v1.9) */}
@@ -108,13 +104,10 @@ if(navigator.userAgent.indexOf('Whale/')>-1){document.documentElement.style.colo
                   <SettingSync />
                   {/* 글·댓글 저장이 거부됐을 때 이유를 알림 (v2.0) — 조용히 되돌리면 스스로 사라진 것처럼 보인다 */}
                   <ListSync />
-                  {/* 역극 메시지 알림음 (커플홈) — 남의 새 발화가 오면 짧게 (역극 페이지의 🔔로 끌 수 있다) */}
-                  <MsgSound />
                   {/* 이미지 올리는 중 표시 (v2.0) — 느린 업로드를 다시 누르지 않게 */}
                   <UploadBusy />
                   {/* 맞춤법 검사 밑줄 숨김 — 디자인 탭 (v2.0) */}
                   <SpellCheck />
-                  </HomeGate>
                   </SetupGate>
                 </BgmStoreProvider>
               </MainStoreProvider>

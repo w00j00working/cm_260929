@@ -7,7 +7,6 @@ import { KInput, KTextarea, KCheck, KStep, KDate } from '@/components/ui/Kit';
 import { DragList } from '@/components/ui/DragList';
 import { CropEditor, CropValue, CropImg, CroppedBlobImg } from '@/components/ui/CropEditor';
 import { putBlob, useBlobUrl } from '@/lib/blobStore';
-import { newId } from '@/lib/postStore';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirmDelete } from '@/components/ui/Modal';
 import { normalizeInternalLink } from '@/lib/link';
@@ -63,18 +62,7 @@ export function TextSettingEditor({ conf }: { conf: WidgetConf }) {
 
 /* ---------- D-DAY — settings.items: {title, date, plusOne?}[] ---------- */
 // plusOne: 시작일을 1일로 세는 기념일 카운트 (+1 Day — 커플 기념일 등, 당일 = D+1)
-/** id: 편집 줄의 고정 키 (커플홈) — 예전 항목에는 없을 수 있어 편집기를 열 때 붙인다 */
-export interface DdaySetItem { id?: string; title: string; date: string; plusOne?: boolean; text?: string }
-/** 텍스트형 설정 (커플홈 사용자 요청) — mode 'text'면 패널 없이 제목(폰트1)+날짜 글씨(폰트2)만.
- *  format 고정: numStyle D+123 / 123일 · 자유: 항목마다 적은 문장의 [[Dday]] 자리에 날 수 */
-export interface DdayTextSettings {
-  mode?: 'list' | 'text';
-  format?: 'fixed' | 'free';
-  numStyle?: 'dplus' | 'days';
-  titleFontId?: string; titleSize?: number; titleColor?: string;   // 폰트1 — 제목
-  textSize?: number;                                                // 폰트2 크기 — 폰트·색은 fontId·color
-  align?: 'left' | 'center' | 'right';
-}
+export interface DdaySetItem { title: string; date: string; plusOne?: boolean }
 
 export function DdayEditor({ conf }: { conf: WidgetConf }) {
   const { updateWidget } = useMainStore();
@@ -89,70 +77,27 @@ export function DdayEditor({ conf }: { conf: WidgetConf }) {
     updateWidget(conf.id, { settings: { ...conf.settings, items: next } }, { persist: true });
   const setMeta = (patch: Record<string, unknown>) =>
     updateWidget(conf.id, { settings: { ...conf.settings, ...patch } }, { persist: true });
-  /* 줄마다 고정 키 (커플홈 사용자 제보 — 제목을 고칠 때마다 포커스가 날아가 한 글자씩만 입력됐다):
-     예전에는 키가 「제목|날짜」라 글자 하나 바꿀 때마다 줄이 새로 그려졌다. 예전 항목에는 id가 없으니 열 때 한 번 붙인다 */
-  useEffect(() => {
-    if (items.length && items.some(it => !it.id)) set(items.map(it => (it.id ? it : { ...it, id: newId() })));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
-  const tx = conf.settings as DdayTextSettings;
-  const isText = conf.type === 'ddaytext';   // 표시 방식은 위젯 종류가 정한다 — 리스트형(dday) / 텍스트형(ddaytext)
-  const isFree = isText && tx.format === 'free';
   const [nt, setNt] = useState('');
   const [nd, setNd] = useState('');
 
   const add = () => {
-    // 자유 형식은 제목이 선택사항 — 문장은 항목 줄에서 적는다
-    if (!nt.trim() && !isFree) { toast('제목을 입력해 주세요'); return; }
+    if (!nt.trim()) { toast('제목을 입력해 주세요'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(nd)) { toast('날짜를 YYYY-MM-DD 형식으로 입력해 주세요'); return; }
-    set([...items, { id: newId(), title: nt.trim(), date: nd, ...(isFree ? { text: '[[Dday]]일 째' } : {}) }]);
+    set([...items, { title: nt.trim(), date: nd }]);
     setNt(''); setNd('');
   };
-  const segBtn = (on: boolean, label: string, onClick: () => void) => (
-    <button className={on ? 'on' : ''} onClick={onClick}>{label}</button>
-  );
 
   return (
     <div>
-      {/* 표시 방식은 위젯 종류가 정한다 — 리스트형(D-DAY, 하나만) / 텍스트형(D-DAY 텍스트, 여러 개).
-          텍스트형에만 입력 형식·정렬 등 글씨 설정이 있다 */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        {isText && (
-          <>
-            <span className="cp-lb">입력 형식</span>
-            <div className="mini-seg">
-              {segBtn(!isFree, '고정', () => setMeta({ format: 'fixed' }))}
-              {segBtn(isFree, '자유', () => setMeta({ format: 'free' }))}
-            </div>
-            {!isFree && (
-              <div className="mini-seg">
-                {segBtn((tx.numStyle ?? 'dplus') === 'dplus', 'D+123', () => setMeta({ numStyle: 'dplus' }))}
-                {segBtn(tx.numStyle === 'days', '123일', () => setMeta({ numStyle: 'days' }))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      {isText && (
-        <p className="hint" style={{ marginBottom: 8 }}>
-          {isFree
-            ? '자유 — 항목마다 문장을 적고 [[Dday]] 자리에 날 수가 들어갑니다 (예: 사랑한지 [[Dday]]일 째) · 제목은 선택'
-            : '고정 — 제목(폰트1) 아래 날짜 글씨(폰트2)만 표시 · D+123 또는 123일'}
-        </p>
-      )}
       <DragList
         items={items}
-        keyOf={it => it.id ?? `${it.title}|${it.date}`}
+        keyOf={it => `${it.title}|${it.date}`}
         onReorder={set}
         render={(it, i) => (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px dashed var(--line)', width: '100%' }}>
             <span className="drag-h">⠿</span>
-            <KInput value={it.title} placeholder={isFree ? '제목 (선택)' : '제목'} style={isFree ? { maxWidth: 120 } : undefined}
+            <KInput value={it.title} placeholder="제목"
               onChange={e => set(items.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
-            {isFree && (
-              <KInput value={it.text ?? ''} placeholder="사랑한지 [[Dday]]일 째"
-                onChange={e => set(items.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
-            )}
             <KDate value={it.date} style={{ maxWidth: 122 }}
               onChange={v => set(items.map((x, j) => (j === i ? { ...x, date: v } : x)))} />
             <span data-tip="시작일을 1일로 세는 기념일 카운트 — 당일이 D+1 (커플 기념일 등)">
@@ -166,48 +111,19 @@ export function DdayEditor({ conf }: { conf: WidgetConf }) {
       />
       {items.length === 0 && <p className="hint">등록된 D-day가 없습니다</p>}
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <KInput placeholder={isFree ? '제목 (선택)' : '제목'} value={nt} onChange={e => setNt(e.target.value)} />
+        <KInput placeholder="제목" value={nt} onChange={e => setNt(e.target.value)} />
         <KDate value={nd} style={{ maxWidth: 122 }} onChange={setNd} />
         <button className="btn btn-dark" style={{ whiteSpace: 'nowrap' }} onClick={add}>＋ ADD</button>
       </div>
       <p className="hint" style={{ marginTop: 6 }}>+1D — 시작일을 1일로 세는 기념일 카운트 (당일 = D+1)</p>
       {/* 날짜 표시(D-2·D+3 등) 폰트·색 (v2.0 사용자 요청) — 제목 글씨는 본문 폰트를 그대로 따라간다 */}
-      {isText && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--line)' }}>
-          <span className="cp-lb">제목 폰트</span>
-          <KSelect minWidth={150} value={tx.titleFontId ?? ''}
-            onChange={v => setMeta({ titleFontId: v || undefined })}
-            options={[{ value: '', label: '본문 그대로' },
-              ...fonts.map(f => ({ value: f.id, label: <span style={{ fontFamily: familyOf(f.id) }}>{f.name}</span> }))]} />
-          <span className="cp-lb">크기</span>
-          <KStep value={tx.titleSize ?? 13} min={8} max={80} suffix="px" onChange={v => setMeta({ titleSize: v })} />
-          <span className="cp-lb">색</span>
-          <ColorField value={tx.titleColor ?? '#e6ebf2'} onChange={hex => setMeta({ titleColor: hex })} />
-        </div>
-      )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--line)' }}>
-        <span className="cp-lb">{isText ? '날짜 글씨 폰트' : '날짜표시 폰트'}</span>
+        <span className="cp-lb">날짜표시 폰트</span>
         <KSelect minWidth={150} value={fontId}
           onChange={v => setMeta({ fontId: v })}
           options={fonts.map(f => ({ value: f.id, label: <span style={{ fontFamily: familyOf(f.id) }}>{f.name}</span> }))} />
-        {isText && (
-          <>
-            <span className="cp-lb">크기</span>
-            <KStep value={tx.textSize ?? 22} min={8} max={120} suffix="px" onChange={v => setMeta({ textSize: v })} />
-          </>
-        )}
         <span className="cp-lb">색</span>
         <ColorField value={color ?? '#e6ebf2'} onChange={hex => setMeta({ color: hex })} />
-        {isText && (
-          <>
-            <span className="cp-lb">정렬</span>
-            <div className="mini-seg">
-              {segBtn(tx.align === 'left', '왼쪽', () => setMeta({ align: 'left' }))}
-              {segBtn((tx.align ?? 'center') === 'center', '가운데', () => setMeta({ align: 'center' }))}
-              {segBtn(tx.align === 'right', '오른쪽', () => setMeta({ align: 'right' }))}
-            </div>
-          </>
-        )}
       </div>
     </div>
   );

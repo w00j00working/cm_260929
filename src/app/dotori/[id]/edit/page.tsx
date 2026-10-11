@@ -13,7 +13,7 @@ import { PageTitle } from '@/components/ui/PageText';
 export default function DotoriEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const toast = useToast();
   const [items, setItems, loaded] = useLocalList<DotoriItem>('ohome.dotori.v1', DOTORI_SEED);
   // 큰 글씨 — 추가 섹션 항목이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
@@ -21,8 +21,7 @@ export default function DotoriEditPage() {
   const it = items.find(x => x.id === id);
 
   if (!loaded) return <section className="page" />;
-  // 등록한 본인 또는 관리자 (커플홈 — 일반 회원도 등록한다). 등록자 기록이 없는 옛 항목은 관리자 것
-  if (!it || !(isAdmin || (!!user && it.authorId === user.id))) {
+  if (!isAdmin || !it) {
     return (
       <section className="page">
         <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><p>항목을 찾을 수 없거나 권한이 없습니다</p></div>

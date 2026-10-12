@@ -51,6 +51,8 @@ export interface Backend {
   signUp(id: string, password: string, nickname: string): Promise<{ ok: boolean; error?: string }>;
   signOut(): Promise<void>;
   resetPassword(email: string): Promise<{ ok: boolean; error?: string }>;
+  /** 지금 로그인한 계정의 토큰 — /api/push 라우트가 「이 홈의 로그인 계정」인지 확인하는 데 쓴다 (웹푸시, 루넬 이식) */
+  authToken(): Promise<string | null>;
   updateProfile(patch: { nickname?: string; avatarUrl?: string | null; avatarColor?: string | null; currentPassword?: string; newPassword?: string }): Promise<{ ok: boolean; error?: string }>;
   /** 첫 계정을 이 홈의 관리자로 등록 (관리자가 아직 없을 때만) */
   claimOwner(): Promise<{ ok: boolean; error?: string }>;
@@ -128,6 +130,8 @@ export const COLLECTION_OF: Record<string, string> = {
   // 알림 — 기기 보관이던 것을 서버로 (v2.0 포크 제보 「알림이 안 와요」).
   // 행 주인(authorId)을 받는 사람으로 적어, 받는 사람 계정이 어느 기기에서나 받아 간다
   'ohome.notif.v1': 'notifications',
+  // 웹푸시 기기 구독 (루넬 이식) — 회원마다 기기별 한 문서, 공개범위 member (보내는 쪽이 받는 사람 구독을 읽어야 한다)
+  'ohome.pushsubs.v1': 'push_subs',
 };
 
 export const CONTENT_COLLECTIONS = Object.values(COLLECTION_OF);

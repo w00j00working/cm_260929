@@ -10,14 +10,14 @@ import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
 import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useLocalList } from '@/lib/postStore';
-import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint, useDiarySettings, parseDiaryLink, diaryOrder, diaryCatMode } from '@/lib/diaryStore';
+import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint, useDiarySettings, parseDiaryLink, diaryOrder, diaryCatMode, ownerSides } from '@/lib/diaryStore';
 import { Character, CHAR_SEED, Relation, REL_SEED, charWithAu, hasRelGrant, charGrant, charPath, pairSides } from '@/lib/charStore';
 import { useMembers } from '@/lib/members';
 import { renderBody } from '@/lib/sanitize';
 import { SearchBar, Pager } from '@/components/ui/Kit';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { Lightbox } from '@/components/ui/Lightbox';
-import { BlobImg } from '@/lib/blobStore';
+import { BlobImg, useBlobUrl } from '@/lib/blobStore';
 import { CroppedBlobImg } from '@/components/ui/CropEditor';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 
@@ -36,6 +36,17 @@ function MoodIcon({ mood, size = 30 }: { mood?: Mood; size?: number }) {
       fontSize: size * 0.45,
       background: moodTint(mood?.color ?? '#888'), color: mood?.color ?? 'var(--sub)',
     }}>{mood?.icon ?? '·'}</span>
+  );
+}
+
+/** 오너 칸 머리의 프로필 사진 (v2.1 사용자 요청 — 각자 마이페이지에서 정한 사진) · 사진이 없으면 단색 + 머리글자 */
+function OwnerFace({ url, color, name }: { url?: string; color?: string; name: string }) {
+  const src = useBlobUrl(url);
+  return (
+    <span className="dy-cf txt" style={{ background: src ? undefined : (color ?? 'linear-gradient(135deg,#6b7280,#3c434d)') }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {src ? <img src={src} alt="" /> : name.slice(0, 1)}
+    </span>
   );
 }
 
@@ -79,15 +90,19 @@ function DiaryPageInner() {
   const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
   const [chars] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   const members = useMembers();
-  const ownerName = members.find(m => m.role === 'admin')?.nickname;
-  const nickOf = (id?: string) => (id ? members.find(m => m.id === id)?.nickname : undefined);
+  // 오너(사이트 관리자) — 회원 목록의 관리자, 브라우저 모드에서는 'admin'
+  const adminId = members.find(m => m.role === 'admin')?.id ?? 'admin';
+  const memberOf = (id?: string) => (id ? members.find(m => m.id === id) : undefined);
+  const ownerName = memberOf(adminId)?.nickname;
+  const nickOf = (id?: string) => memberOf(id)?.nickname;
   const [fCat, setFCat] = useState<string | null>(null);   // null = 아직 안 고름 → 맨 위 구분
   const effCat = dset.cats.length === 0 ? 'all'
     : fCat === 'none' || (fCat && dset.cats.some(c => c.id === fCat)) ? fCat : dset.cats[0].id;
   const curCat = dset.cats.find(c => c.id === effCat);
   // 탭 방식 (v2.1 사용자 요청) — 오너(사람)끼리 쓰는 탭 / 캐릭터(자관·AU)로 쓰는 탭
   const catMode = diaryCatMode(curCat);
-  const partnerId = catMode === 'owner' ? (curCat?.partnerId?.trim() || undefined) : undefined;
+  // 오너 탭의 왼쪽·오른쪽 사람 (v2.1 사용자 요청 — 환경설정에서 누가 어느 쪽인지 고른다)
+  const os = catMode === 'owner' ? ownerSides(curCat, adminId) : {};
   const link = catMode === 'char' ? parseDiaryLink(curCat?.link) : null;
   const linkRel = link ? rels.find(r => r.id === link.relId) : undefined;
   const linkAu = linkRel && link && link.auId !== 'base' ? linkRel.aus.find(a => a.id === link.auId) : undefined;
@@ -103,22 +118,26 @@ function DiaryPageInner() {
     : [];
   /* 두 사람 칸 (v2.1 사용자 요청 — 자놀홈처럼). 캐릭터 탭: 페어 자관의 왼쪽/오른쪽 캐릭터 칸 ·
      오너 탭에 상대 오너를 정해 뒀으면 오너 | 상대 오너 칸. 3인+ 자관이나 상대 없는 오너 탭은 한 칸 */
-  type Col = { side: 'l' | 'r'; char?: Character; uid?: string; name: string; color?: string };
+  type Col = { side: 'l' | 'r'; char?: Character; uid?: string; name: string; color?: string; avatar?: string };
   const pair = linkRel ? pairSides(linkRel) : null;
   const colOfChar = (side: 'l' | 'r', cid: string): Col => {
     const c = charOf(cid);
     return { side, char: c, name: c?.name ?? '—', color: c?.color };
   };
+  const colOfOwner = (side: 'l' | 'r', uid: string): Col => {
+    const m = memberOf(uid);
+    return { side, uid, name: m?.nickname ?? (uid === adminId ? '오너' : uid), avatar: m?.avatarUrl, color: m?.avatarColor };
+  };
   const cols: [Col, Col] | null = pair
     ? [colOfChar('l', pair[0]), colOfChar('r', pair[1])]
-    : partnerId
-      ? [{ side: 'l', uid: 'owner', name: ownerName ?? '오너' }, { side: 'r', uid: partnerId, name: nickOf(partnerId) ?? partnerId }]
+    : os.l && os.r
+      ? [colOfOwner('l', os.l), colOfOwner('r', os.r)]
       : null;
   /** 이 일기가 어느 칸인지 — 오너 탭: 상대 오너가 쓴 것만 오른쪽 · 캐릭터 탭: 쓴 캐릭터로.
    *  캐릭터 없이 쓴 일기는 쓴 사람이 권한을 가진 쪽, 그다음 자캐(own) 쪽 */
   const sideOf = (p: DiaryPost): Side => {
     if (!cols) return 'one';
-    if (partnerId) return p.authorId === partnerId ? 'r' : 'l';
+    if (catMode === 'owner') return p.authorId === os.r ? 'r' : 'l';
     if (p.charId === pair![0]) return 'l';
     if (p.charId === pair![1]) return 'r';
     const L = chars.find(c => c.id === pair![0]);
@@ -129,12 +148,13 @@ function DiaryPageInner() {
   };
   // 이 탭에 쓸 수 있는 사람 — 권한 설정 외에, 오너 탭의 상대 오너와 캐릭터 탭의 자관 캐릭터 권한을 받은 회원도 (두 사람이 같이 쓰는 일기)
   const canWriteHere = canWrite
-    || (!!user && !!partnerId && user.id === partnerId)
+    || (!!user && (user.id === os.l || user.id === os.r))
     || (!!user && !!linkRel && hasRelGrant(linkRel.members, chars, user.id));
   /** 그 칸에 쓸 수 있는 사람 — 상대 오너 칸은 그 사람만 · 캐릭터 칸은 관리자·글쓰기 권한 회원 누구나, 캐릭터 권한을 받은 회원은 그 캐릭터만 */
   const canWriteCol = (col: Col) => {
     if (!user) return false;
-    if (col.uid) return col.uid === 'owner' ? (isAdmin || canWrite) : user.id === col.uid;
+    // 오너 칸: 그 사람 본인 (관리자는 관리자 자리에)
+    if (col.uid) return user.id === col.uid || (isAdmin && (col.uid === adminId || memberOf(col.uid)?.role === 'admin'));
     if (isAdmin || canWrite) return true;
     return !!col.char && !!charGrant(col.char, user.id);
   };
@@ -260,8 +280,8 @@ function DiaryPageInner() {
                 {ch.thumbId && <CroppedBlobImg fileRef={ch.thumbId} crop={ch.thumbCrop} />}
               </span>
             ) : (
-              /* 오너 탭 — 이름 머리글자 */
-              <span className="dy-cf txt" style={{ background: col.uid === 'owner' ? 'var(--accent)' : 'var(--sub)' }}>{col.name.slice(0, 1)}</span>
+              /* 오너 탭 — 각자 마이페이지에서 정한 프로필 사진 */
+              <OwnerFace url={col.avatar} color={col.color} name={col.name} />
             )}
             <b className="nm">{col.name}</b>
             <small>{list.length}</small>
@@ -318,10 +338,13 @@ function DiaryPageInner() {
                   </div>
                 </>
               ) : (
-                <div className="nm">
-                  <b>OWNER</b>
-                  <small>{ownerName ? `${ownerName}의 일기` : '오너의 일기'}</small>
-                </div>
+                <>
+                  <OwnerFace url={memberOf(os.l ?? adminId)?.avatarUrl} color={memberOf(os.l ?? adminId)?.avatarColor} name={nickOf(os.l ?? adminId) ?? ownerName ?? '오너'} />
+                  <div className="nm">
+                    <b>OWNER</b>
+                    <small>{(nickOf(os.l ?? adminId) ?? ownerName) ? `${nickOf(os.l ?? adminId) ?? ownerName}의 일기` : '오너의 일기'}</small>
+                  </div>
+                </>
               )}
             </div>
           )}

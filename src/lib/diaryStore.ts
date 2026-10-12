@@ -56,10 +56,20 @@ export interface DiaryCat {
   id: string; name: string;
   /** 쓰는 사람 (v2.1 사용자 요청) — owner: 오너(+상대 오너)끼리 · char: 자관/AU의 캐릭터로. 없으면 link가 있을 때만 char */
   mode?: 'owner' | 'char';
-  /** 오너 탭의 상대 오너(회원 id) — 정해 두면 「오너 | 상대 오너」 두 칸이 되고 그 회원이 자기 칸에 쓴다 */
+  /** 오너 탭의 왼쪽·오른쪽 사람(회원 id) (v2.1 사용자 요청 — 누가 어느 쪽에 갈지 고른다). 둘 다 정하면 두 칸 */
+  leftId?: string;
+  rightId?: string;
+  /** (옛 설정) 상대 오너 — leftId/rightId가 없을 때 오른쪽으로 읽는다 */
   partnerId?: string;
   /** 캐릭터 탭의 자관/AU (`relId:auId`) */
   link?: string;
+}
+/** 오너 탭의 왼쪽·오른쪽 사람 — 옛 설정(partnerId만)은 왼쪽 오너(adminId), 오른쪽 상대 */
+export function ownerSides(c: DiaryCat | undefined, adminId: string): { l?: string; r?: string } {
+  if (!c) return {};
+  const r = c.rightId || c.partnerId || undefined;
+  const l = c.leftId || (r ? adminId : undefined);
+  return { l, r };
 }
 /** 탭 방식 — 옛 설정(mode 없음)은 link가 있으면 캐릭터, 아니면 오너 */
 export const diaryCatMode = (c?: DiaryCat): 'owner' | 'char' => c?.mode ?? (c?.link ? 'char' : 'owner');

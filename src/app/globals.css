@@ -1289,6 +1289,7 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
 .dy-col-hd .btn{margin-left:auto;padding:6px 14px;font-size:11px;white-space:nowrap}
 .dy-cf{width:38px;height:38px;border-radius:50%;overflow:hidden;position:relative;flex-shrink:0;box-shadow:0 0 0 2px var(--panel-solid,#fff);transition:.15s}
 .dy-cf.txt{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:calc(14px*var(--fs,1))}
+.dy-cf img{width:100%;height:100%;object-fit:cover;display:block}
 .dy-cf.go{cursor:var(--cur-pointer,pointer)}
 .dy-cf.go:hover{transform:translateY(-2px)}
 .dy-tabhd .dy-cf+.dy-cf{margin-left:-10px}

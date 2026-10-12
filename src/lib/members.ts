@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { backend, isServerMode } from './backend';
 
-export interface MemberLite { id: string; nickname: string; role?: 'admin' | 'member' }
+export interface MemberLite {
+  id: string; nickname: string; role?: 'admin' | 'member';
+  /** 프로필 사진·단색 (v2.1 — 다이어리 오너 칸 머리에 각자 정한 사진을 보여 주기 위해) */
+  avatarUrl?: string; avatarColor?: string;
+}
 
 /** 로컬(브라우저) 계정 목록 — 서버 없이 개발할 때 */
 export function memberPool(): MemberLite[] {
@@ -16,7 +20,11 @@ export function memberPool(): MemberLite[] {
       Record<string, { user?: MemberLite }>;
     for (const k of Object.keys(reg)) {
       const u = reg[k]?.user;
-      if (u && !base.some(b => b.id === u.id)) base.push({ id: u.id, nickname: u.nickname });
+      if (!u) continue;
+      const hit = base.find(b => b.id === u.id);
+      // 기본 계정(admin·guest)도 마이페이지에서 사진을 정했으면 그 사진을 (v2.1)
+      if (hit) { hit.avatarUrl = u.avatarUrl; hit.avatarColor = u.avatarColor; if (u.nickname) hit.nickname = u.nickname; }
+      else base.push({ id: u.id, nickname: u.nickname, avatarUrl: u.avatarUrl, avatarColor: u.avatarColor });
     }
   } catch { /* 무시 */ }
   return base;
@@ -30,7 +38,7 @@ export function useMembers(): MemberLite[] {
     if (!isServerMode() || !be) { setList(memberPool()); return; }
     let alive = true;
     be.listMembers()
-      .then(rows => { if (alive) setList(rows.map(r => ({ id: r.id, nickname: r.nickname, role: r.role }))); })
+      .then(rows => { if (alive) setList(rows.map(r => ({ id: r.id, nickname: r.nickname, role: r.role, avatarUrl: r.avatarUrl }))); })
       .catch(() => { /* 권한·네트워크 문제면 빈 목록 */ });
     return () => { alive = false; };
   }, []);

@@ -42,7 +42,9 @@ function DiaryWriteInner() {
   };
   // 오너 탭은 상대 오너로 지정된 회원, 캐릭터 탭은 자관 캐릭터 권한을 받은 회원도 쓴다
   const writableCats = canWriteGeneral ? dset.cats
-    : dset.cats.filter(c => (diaryCatMode(c) === 'owner' ? !!c.partnerId && c.partnerId === user?.id : linkedGrant(c.link)));
+    : dset.cats.filter(c => (diaryCatMode(c) === 'owner'
+      ? !!user && [c.leftId, c.rightId, c.partnerId].includes(user.id)
+      : linkedGrant(c.link)));
   /* 누구의 일기로 쓸지 (v2.1) — 보고 있던 탭이 페어 자관을 연동했으면 그 자관의 두 캐릭터 중 이 사람이 쓸 수 있는 것.
      관리자·글쓰기 권한 회원은 둘 다, 캐릭터 권한을 받은 회원은 그 캐릭터만. AU 탭이면 AU 모습의 이름으로 보여 준다 */
   const wantCatObj = dset.cats.find(c => c.id === wantCat);

@@ -41,7 +41,7 @@ import { parseAni } from '@/lib/aniCursor';
 import { fileDrop } from '@/lib/dnd';
 import { Character, CHAR_SEED, Relation, REL_SEED } from '@/lib/charStore';
 import { useLocalList } from '@/lib/postStore';
-import { Mood, MOOD_SEED, moodTint, useDiarySettings, DiaryCat, diaryCatMode } from '@/lib/diaryStore';
+import { Mood, MOOD_SEED, moodTint, useDiarySettings, DiaryCat, diaryCatMode, ownerSides, parseDiaryLink } from '@/lib/diaryStore';
 import {
   TextSettingEditor, DdayEditor, TodoEditor, BannerEditor, DecoEditor,
 } from '@/components/main/widgetEditors';
@@ -1421,24 +1421,32 @@ function DiaryCatPane() {
   const members = useMembers();   // 오너 탭의 상대 오너 — 가입한 회원 중에서
   const del = useConfirmDelete();
   const setCats = (cats: DiaryCat[]) => patch({ cats });
-  const partnerOptions = members.filter(m => m.role !== 'admin' && m.id !== 'admin')
-    .map(m => ({ value: m.id, label: `${m.nickname} (${m.id})` }));
-  // 연동 선택지 — 자관 원본(relId:base)과 그 자관의 AU들(relId:auId)
-  const linkOptions = [
-    { value: '', label: '연동 없음 — 오너의 일기' },
-    ...rels.flatMap(r => [
-      { value: `${r.id}:base`, label: r.name },
-      ...r.aus.filter(a => a.id !== 'base').map(a => ({ value: `${r.id}:${a.id}`, label: `${r.name} · ${a.label}` })),
-    ]),
+  // 오너(사이트 관리자) — 회원 목록의 관리자, 브라우저 모드에서는 'admin'
+  const adminId = members.find(m => m.role === 'admin')?.id ?? 'admin';
+  const isOwnerId = (id: string) => id === adminId || members.find(m => m.id === id)?.role === 'admin';
+  /** 왼쪽/오른쪽 사람 선택지 — 가입한 회원 전부(오너 포함) · 탈퇴 등으로 목록에 없는 지정이 남아 있으면 그대로 보여 준다 */
+  const personOptions = (cur?: string) => [
+    { value: '', label: '없음' },
+    ...members.map(m => ({ value: m.id, label: `${m.nickname}${isOwnerId(m.id) ? ' (오너)' : ''} (${m.id})` })),
+    ...(cur && !members.some(m => m.id === cur) ? [{ value: cur, label: `${cur} (회원 목록에 없음)` }] : []),
   ];
+  const setSide = (id: string, side: 'leftId' | 'rightId', v: string) => {
+    // 한쪽을 고치면 옛 partnerId 표기는 새 표기(leftId/rightId)로 옮긴다
+    setCats(dset.cats.map(x => {
+      if (x.id !== id) return x;
+      const cur = ownerSides(x, adminId);
+      return { ...x, leftId: cur.l, rightId: cur.r, [side]: v || undefined, partnerId: undefined };
+    }));
+  };
+  const setLink = (id: string, link?: string) => setCats(dset.cats.map(x => (x.id === id ? { ...x, link } : x)));
   return (
     <div className="set-sec" style={{ marginTop: 26 }}>
       <h3>구분 탭</h3>
       <div className="d">
         다이어리 위쪽에 탭으로 나오는 구분 — 일기를 쓸 때 고릅니다 · ⠿ 드래그로 순서
         <br />
-        탭마다 <b>누가 쓰는지</b>를 정합니다 — <b>오너</b>: 오너의 일기. 상대 오너(회원)를 고르면 「오너 | 상대 오너」 두 칸이 되어 그 회원이 자기 칸에 씁니다 ·
-        <b>캐릭터</b>: 자관이나 AU를 골라 그 캐릭터로 씁니다. 페어 자관이면 왼쪽·오른쪽 캐릭터 칸으로 나뉘고, 그 자관 캐릭터에 권한을 받은 회원도 그 칸에 씁니다
+        탭마다 <b>누가 쓰는지</b>를 정합니다 — <b>오너</b>: 왼쪽·오른쪽에 둘 사람(회원)을 고르면 두 칸이 되어 각자 자기 칸에 씁니다(칸 머리에는 각자 마이페이지에서 정한 프로필 사진). 한쪽만 두면 오너 혼자 한 칸 ·
+        <b>캐릭터</b>: 자관을 고르고, AU가 있으면 어느 AU인지도 고릅니다. 페어 자관이면 왼쪽·오른쪽 캐릭터 칸으로 나뉘고, 그 자관 캐릭터에 권한을 받은 회원도 그 칸에 씁니다
       </div>
       <DragList items={dset.cats} keyOf={c => c.id} onReorder={setCats}
         render={c => (
@@ -1453,20 +1461,39 @@ function DiaryCatPane() {
               <KSelect minWidth={96} value={diaryCatMode(c)}
                 onChange={v => setCats(dset.cats.map(x => (x.id === c.id ? { ...x, mode: v as 'owner' | 'char' } : x)))}
                 options={[{ value: 'owner', label: '오너' }, { value: 'char', label: '캐릭터' }]} />
-              {diaryCatMode(c) === 'owner' ? (
-                <KSelect minWidth={190} value={c.partnerId ?? ''}
-                  onChange={v => setCats(dset.cats.map(x => (x.id === c.id ? { ...x, partnerId: v || undefined } : x)))}
-                  options={[
-                    { value: '', label: '상대 오너 없음 — 오너 혼자' },
-                    ...partnerOptions,
-                    // 탈퇴 등으로 목록에 없는 지정이 남아 있으면 보여 준다 — 몰래 남지 않게
-                    ...(c.partnerId && !partnerOptions.some(o => o.value === c.partnerId) ? [{ value: c.partnerId, label: `${c.partnerId} (회원 목록에 없음)` }] : []),
-                  ]} />
-              ) : (
-                <KSelect minWidth={190} value={c.link ?? ''}
-                  onChange={v => setCats(dset.cats.map(x => (x.id === c.id ? { ...x, link: v || undefined } : x)))}
-                  options={linkOptions} />
-              )}
+              {diaryCatMode(c) === 'owner' ? (() => {
+                /* 왼쪽 | 오른쪽 사람 (v2.1 사용자 요청) — 누가 어느 쪽에 갈지 직접 고른다 */
+                const os = ownerSides(c, adminId);
+                return (
+                  <>
+                    <span className="cp-lb">왼쪽</span>
+                    <KSelect minWidth={150} value={os.l ?? ''} onChange={v => setSide(c.id, 'leftId', v)} options={personOptions(os.l)} />
+                    <span className="cp-lb">오른쪽</span>
+                    <KSelect minWidth={150} value={os.r ?? ''} onChange={v => setSide(c.id, 'rightId', v)} options={personOptions(os.r)} />
+                  </>
+                );
+              })() : (() => {
+                /* 자관 → AU 2단계 (v2.1 사용자 요청) — 자관을 고르면 그 자관의 AU 중에서 고를 수 있다 (원본 = AU 없음) */
+                const lk = parseDiaryLink(c.link);
+                const rel = lk ? rels.find(r => r.id === lk.relId) : undefined;
+                const aus = rel?.aus.filter(a => a.id !== 'base') ?? [];
+                return (
+                  <>
+                    <span className="cp-lb">자관</span>
+                    <KSelect minWidth={150} value={rel ? rel.id : ''}
+                      onChange={v => setLink(c.id, v ? `${v}:base` : undefined)}
+                      options={[{ value: '', label: '자관 선택' }, ...rels.map(r => ({ value: r.id, label: r.name }))]} />
+                    {rel && aus.length > 0 && (
+                      <>
+                        <span className="cp-lb">AU</span>
+                        <KSelect minWidth={130} value={aus.some(a => a.id === lk!.auId) ? lk!.auId : 'base'}
+                          onChange={v => setLink(c.id, `${rel.id}:${v}`)}
+                          options={[{ value: 'base', label: '원본' }, ...aus.map(a => ({ value: a.id, label: a.label }))]} />
+                      </>
+                    )}
+                  </>
+                );
+              })()}
               <small style={{ color: 'var(--faint)', fontSize: 10.5 }}>일기 {diaries.filter(d => d.catId === c.id).length}개</small>
               <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
                 onClick={() => {

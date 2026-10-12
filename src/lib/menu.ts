@@ -11,6 +11,7 @@ export interface MenuItem {
 /** 배치 가능한 기능(모듈) 전체 — href → 기본 이름. 메뉴 트리에 넣어야 노출됨 (3장 메뉴 선택제) */
 export const FEATURES: { href: string; label: string }[] = [
   { href: '/chars', label: '캐릭터' },
+  { href: '/pchars', label: '상대 캐릭터' },   // 상대 캐릭터 리스트 (v2.1)
   { href: '/rels', label: '자관' },
   { href: '/rp', label: '역극' },
   { href: '/board', label: '리스트' },
@@ -36,6 +37,7 @@ export const DEFAULT_MENU: MenuItem[] = [
     label: '자놀',
     children: [
       { label: '캐릭터', href: '/chars' },
+      { label: '상대 캐릭터', href: '/pchars' },
       { label: '자관', href: '/rels' },
       { label: '역극', href: '/rp' },
     ],

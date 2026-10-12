@@ -44,6 +44,8 @@ export interface BoardSettings {
   /** 큰 그림 게시판 말머리 (v2.1) — 갤러리와 같은 방식, 게시판(섹션)마다 따로 */
   feedCats?: BoardBadge[];
   secFeedCats?: Record<string, BoardBadge[]>;
+  /** 큰 그림 게시판 — 작성자 이름 숨기기 (v2.1 사용자 요청), 게시판(섹션 id)마다 */
+  feedHideAuthor?: Record<string, boolean>;
   /** 로드비 말머리 (v2.1 사용자 요청 — 말머리별로 모아보기). 정한 적 없으면 비어 있다 — 탭에 ALL만 보인다 */
   roadCats?: BoardBadge[];
   secRoadCats?: Record<string, BoardBadge[]>;
@@ -67,6 +69,9 @@ export const feedCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
   (secId === MAIN_SEC ? (s.feedCats ?? DEFAULT_FEED_CATS) : s.secFeedCats?.[secId] ?? s.feedCats ?? DEFAULT_FEED_CATS);
 const feedCatsPatch = (s: BoardSettings, secId: string, cats: BoardBadge[]): Partial<BoardSettings> =>
   (secId === MAIN_SEC ? { feedCats: cats } : { secFeedCats: { ...s.secFeedCats, [secId]: cats } });
+
+/** 그 큰 그림 게시판에서 작성자 이름을 숨기는가 (v2.1) */
+export const feedHideAuthorOf = (s: BoardSettings, secId: string): boolean => !!s.feedHideAuthor?.[secId];
 
 /** 그 로드비에서 쓸 말머리 (v2.1) — 따로 정한 적이 없으면 기본 로드비 것, 그것도 없으면 없음(ALL만) */
 export const roadCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
@@ -139,6 +144,8 @@ export function useBoardSettings() {
   const removeFeedCat = useCallback((secId: string, id: string) =>
     mutFeedCats(secId, cs => cs.filter(b => b.id !== id)), [mutFeedCats]);
   const setFeedCats = useCallback((secId: string, cats: BoardBadge[]) => mutFeedCats(secId, () => cats), [mutFeedCats]);
+  const setFeedHideAuthor = useCallback((secId: string, v: boolean) =>
+    apply(s => ({ ...s, feedHideAuthor: { ...s.feedHideAuthor, [secId]: v } })), [apply]);
   const mutRoadCats = useCallback((secId: string, fn: (cats: BoardBadge[]) => BoardBadge[]) =>
     apply(s => ({ ...s, ...roadCatsPatch(s, secId, fn(roadCatsOf(s, secId))) })), [apply]);
   const patchRoadCat = useCallback((secId: string, id: string, p: Partial<BoardBadge>) =>
@@ -150,7 +157,7 @@ export function useBoardSettings() {
   return {
     st, loaded, patchSystem, patchCat, addCat, removeCat, setCats, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
-    patchFeedCat, addFeedCat, removeFeedCat, setFeedCats,
+    patchFeedCat, addFeedCat, removeFeedCat, setFeedCats, setFeedHideAuthor,
     patchRoadCat, addRoadCat, removeRoadCat, setRoadCats,
   };
 }

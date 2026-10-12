@@ -20,7 +20,7 @@ import { getRawSetting, setSetting } from './settingStore';
 import { newId } from './postStore';
 
 export type SectionKind =
-  | 'gallery' | 'feed' | 'roadview' | 'trpg' | 'dotori' | 'playlog' | 'comm' | 'diary' | 'threads' | 'sched' | 'chars';
+  | 'gallery' | 'feed' | 'roadview' | 'trpg' | 'dotori' | 'playlog' | 'comm' | 'diary' | 'threads' | 'sched' | 'chars' | 'pchars';
 
 /** 섹션 종류별 기본 정보 — 설정 탭 이름과 페이지 주소 */
 export const SECTION_META: Record<SectionKind, { label: string; href: string; defName: string }> = {
@@ -36,6 +36,8 @@ export const SECTION_META: Record<SectionKind, { label: string; href: string; de
   threads:  { label: '감상타래',  href: '/threads',  defName: '감상타래' },
   sched:    { label: '스케줄러',  href: '/cal',      defName: '스케줄러' },
   chars:    { label: '캐릭터',    href: '/chars',    defName: '캐릭터' },
+  // 상대 캐릭터 리스트 (v2.1 사용자 요청) — 내 캐릭터 말고 상대 캐릭터(own=false)만. 캐릭터는 같은 테이블
+  pchars:   { label: '상대 캐릭터', href: '/pchars',  defName: '상대 캐릭터' },
 };
 
 export const SECTION_KINDS = Object.keys(SECTION_META) as SectionKind[];

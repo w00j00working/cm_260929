@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, secQuery } from '@/lib/sectionStore';
 import { useLocalList, fmtDate } from '@/lib/postStore';
 import { BackupPost, FEED_KEY, FEED_SEED } from '@/lib/galleryStore';
-import { useBoardSettings, feedCatsOf, boardBadgeStyle } from '@/lib/boardStore';
+import { useBoardSettings, feedCatsOf, boardBadgeStyle, feedHideAuthorOf } from '@/lib/boardStore';
 import { useMenuSettings, canWriteAt, writeKeyOf } from '@/lib/menuStore';
 import { useBlobUrl } from '@/lib/blobStore';
 import { SearchBar, Pager } from '@/components/ui/Kit';
@@ -36,6 +36,7 @@ function FeedPageInner() {
   // 말머리 탭 — 환경설정 > 게시판 관리의 큰 그림 말머리
   const { st: boardSet } = useBoardSettings();
   const cats = feedCatsOf(boardSet, sec.id);
+  const hideAuthor = feedHideAuthorOf(boardSet, sec.id);   // 작성자 이름 숨기기 (환경설정 > 게시판 관리)
   const [cat, setCat] = useState('');   // '' = ALL
   const [q, setQ] = useState('');
   const [unveiled, setUnveiled] = useState<Record<string, boolean>>({});
@@ -101,7 +102,7 @@ function FeedPageInner() {
                   {p.category && <span style={boardBadgeStyle(badgeOf(p))}>{p.category}</span>}
                   <b>{p.title}</b>
                   {(p.tags ?? []).map(t => <i key={t} className="tag-in">#{t}</i>)}
-                  <small>{count(p) > 1 ? `${count(p)}장 · ` : ''}{p.author} · {fmtDate(p.madeDate ? p.madeDate + 'T00:00:00' : p.date)}</small>
+                  <small>{count(p) > 1 ? `${count(p)}장 · ` : ''}{hideAuthor ? '' : `${p.author} · `}{fmtDate(p.madeDate ? p.madeDate + 'T00:00:00' : p.date)}</small>
                 </div>
               </article>
             );

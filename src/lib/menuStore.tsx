@@ -56,7 +56,7 @@ export const IMG_PROTECT_AREAS: { key: ImgProtectArea; label: string; paths: str
   { key: 'board', label: '게시판 (갤러리·큰 그림·로드비 포함)', paths: ['/board', '/gallery', '/feed', '/loadb'] },
   { key: 'comm', label: '커미션', paths: ['/comm', '/comm-apply'] },
   { key: 'tchar', label: 'TRPG 캐릭터', paths: ['/tchars'] },
-  { key: 'chars', label: '자캐 (캐릭터)', paths: ['/chars'] },
+  { key: 'chars', label: '자캐 (캐릭터·상대 캐릭터)', paths: ['/chars', '/pchars'] },
   { key: 'rels', label: '자관', paths: ['/rels'] },
 ];
 
@@ -319,7 +319,7 @@ export const writeKeyOf = (href: string, secId?: string) =>
 /** 게시판마다의 기본 글쓰기 권한 (v2.1) — 지금까지 관리자만 쓰던 곳은 그대로 관리자, 나머지는 로그인한 회원.
  *  권한 설정 화면과 각 페이지가 같은 값을 보도록 한곳에 둔다 */
 const WRITE_DEFAULT: Record<string, MenuPerm> = {
-  '/diary': 'admin', '/threads': 'admin', '/chars': 'admin', '/tchars': 'admin', '/dotori': 'admin', '/playlog': 'admin',
+  '/diary': 'admin', '/threads': 'admin', '/chars': 'admin', '/pchars': 'admin', '/tchars': 'admin', '/dotori': 'admin', '/playlog': 'admin',
 };
 export const writeDefaultOf = (path: string): MenuPerm => WRITE_DEFAULT[path] ?? 'member';
 

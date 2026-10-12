@@ -16,7 +16,7 @@ import { DiaryPost, DIARY_SEED } from '@/lib/diaryStore';
 import { newId } from '@/lib/postStore';
 import { useCommSettings, badgeStyle, CommBadge, CommSettings } from '@/lib/commStore';
 import {
-  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf, feedCatsOf, roadCatsOf,
+  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf, feedCatsOf, roadCatsOf, feedHideAuthorOf,
   useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
@@ -652,7 +652,7 @@ function BoardPane() {
   const {
     st, patchSystem, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
-    patchFeedCat, addFeedCat, removeFeedCat, setFeedCats,
+    patchFeedCat, addFeedCat, removeFeedCat, setFeedCats, setFeedHideAuthor,
     patchRoadCat, addRoadCat, removeRoadCat, setRoadCats,
   } = useBoardSettings();
   const { boards, setBoards, patchBoard } = useBoards();
@@ -840,13 +840,21 @@ function BoardPane() {
           title: '큰 그림 말머리', desc: '큰 그림 게시판 글쓰기에서 고르는 말머리 — 목록 위 탭으로도 나옵니다',
           secs: feedSecs, sec: feedSec, setSec: setFeedSec, cats: feedCatsOf(st, feedSec),
           set: setFeedCats, patch: patchFeedCat, add: addFeedCat, remove: removeFeedCat,
+          // 작성자 이름 숨기기 (v2.1 사용자 요청) — 이 게시판의 목록·상세에서 글쓴이를 안 보여 준다
+          extra: (
+            <div style={{ marginTop: 12 }}>
+              <KCheck label={<span style={{ fontSize: 12 }}>작성자 이름 숨기기 — 이 게시판의 목록·상세에서 글쓴이를 표시하지 않습니다</span>}
+                checked={feedHideAuthorOf(st, feedSec)} onChange={v => setFeedHideAuthor(feedSec, v)} />
+            </div>
+          ),
         },
         {
           title: '로드비 말머리', desc: '로드비에 그림을 올릴 때 고르는 말머리 — 목록 위 탭으로 모아 볼 수 있습니다 · 하나도 없으면 탭 없이 지금처럼',
           secs: roadSecs, sec: roadSec, setSec: setRoadSec, cats: roadCatsOf(st, roadSec),
           set: setRoadCats, patch: patchRoadCat, add: addRoadCat, remove: removeRoadCat,
+          extra: null as React.ReactNode,
         },
-      ] as const).map(blk => (
+      ]).map(blk => (
         <React.Fragment key={blk.title}>
           <h3 style={{ marginTop: 20 }}>{blk.title}</h3>
           <div className="d">
@@ -880,6 +888,7 @@ function BoardPane() {
             )} />
           <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }}
             onClick={() => blk.add(blk.sec)}>＋ 말머리 추가</button>
+          {blk.extra}
         </React.Fragment>
       ))}
 
@@ -2391,13 +2400,13 @@ function MenuPane() {
       if (!sec) return null;
       secId = sec.id;
     }
-    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/tchars', '/dotori', '/playlog'].includes(path)
+    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/pchars', '/tchars', '/dotori', '/playlog'].includes(path)
       // 추가 로드비 — 기본 페이지의 공통값(roadUpload)을 따르되 따로 정할 수 있다 (기본 페이지는 아래 /loadb 가지에서)
       || (path === '/loadb' && secId !== MAIN_SEC);
     if (!inWritePerm) return null;
     const def: MenuPerm = path === '/loadb' ? (ms.roadUpload === 'admin' ? 'admin' : 'member') : writeDefaultOf(path);
     const key = writeKeyOf(path, secId);
-    const what = path === '/loadb' ? '업로드' : ['/tchars', '/chars', '/playlog', '/dotori'].includes(path) ? '등록' : '글쓰기';
+    const what = path === '/loadb' ? '업로드' : ['/tchars', '/chars', '/pchars', '/playlog', '/dotori'].includes(path) ? '등록' : '글쓰기';
     return { key, perm: ms.writePerm?.[key] ?? def, what };
   };
 

@@ -13,7 +13,7 @@ import { useBlobUrl } from '@/lib/blobStore';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { PageTitle } from '@/components/ui/PageText';
 import { Lightbox } from '@/components/ui/Lightbox';
-import { useBoardSettings, boardBadgeStyle, feedCatsOf } from '@/lib/boardStore';
+import { useBoardSettings, boardBadgeStyle, feedCatsOf, feedHideAuthorOf } from '@/lib/boardStore';
 
 export function BackupDetail({ kind }: { kind: 'gallery' | 'feed' }) {
   const feed = kind === 'feed';
@@ -55,6 +55,8 @@ export function BackupDetail({ kind }: { kind: 'gallery' | 'feed' }) {
     ? feedCatsOf(boardSet, p.secId ?? MAIN_SEC).find(c => c.label === p.category)
     : boardSet.gallery.find(b => b.id === p.type);
   const badgeLabel = feed ? p.category : badge?.label;
+  // 큰 그림 게시판 — 작성자 이름 숨기기 (환경설정 > 게시판 관리, v2.1)
+  const hideAuthor = feed && feedHideAuthorOf(boardSet, p.secId ?? MAIN_SEC);
 
   // 파일 id/URL 모두 지원 — blobStore에서 로드 (새로고침에도 유지)
   // natural: 고정 프레임 안에서 확대 없이 원본 크기 그대로 가운데 (단일형 — 프레임보다 크면 축소만)
@@ -76,7 +78,7 @@ export function BackupDetail({ kind }: { kind: 'gallery' | 'feed' }) {
       <div className="page-head">
         <PageTitle href={tt.href}>{tt.title}</PageTitle>
         <p>
-          {p.category} · {p.author} · {fmtDate(p.date)}{p.madeDate ? ` · 제작 ${p.madeDate}` : ''}
+          {p.category}{hideAuthor ? '' : ` · ${p.author}`} · {fmtDate(p.date)}{p.madeDate ? ` · 제작 ${p.madeDate}` : ''}
           {/* 태그 (v2.0 사용자 요청) — 목록과 같은 표기 */}
           {(p.tags ?? []).map(t => <i key={t} className="tag-in">#{t}</i>)}
         </p>

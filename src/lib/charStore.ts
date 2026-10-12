@@ -423,3 +423,17 @@ export const findByKey = <T extends { id: string; slug?: string }>(list: T[], ke
 export const charPath = (c: { id: string; slug?: string }) => `/chars/${c.slug?.trim() || c.id}`;
 /** 이 자관의 주소 — 별명을 정했으면 그것, 아니면 id */
 export const relPath = (r: { id: string; slug?: string }) => `/rels/${r.slug?.trim() || r.id}`;
+
+/** 페어 자관의 왼쪽·오른쪽 캐릭터 id (v2.1 — 다이어리 두 사람 칸). pairRight가 있으면 그 캐릭터가 오른쪽, 없으면 등록 순서.
+ *  페어가 아니면(3인+ 또는 멤버 2명 미만) null */
+export function pairSides(rel?: Relation): [string, string] | null {
+  if (!rel) return null;
+  const isPair = rel.kind ? rel.kind === 'pair' : rel.members.length === 2;
+  if (!isPair || rel.members.length < 2) return null;
+  const [a, b] = rel.members;
+  if (rel.pairRight && rel.members.some(m => m.charId === rel.pairRight)) {
+    const right = rel.pairRight;
+    return [(a.charId === right ? b : a).charId, right];
+  }
+  return [a.charId, b.charId];
+}

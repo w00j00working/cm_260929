@@ -1280,6 +1280,18 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
 .dy-tabhd .nm b{font-size:calc(13px*var(--fs,1));letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dy-tabhd .nm small{font-size:calc(10.5px*var(--fs,1));color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dy-row .au{font-size:calc(10.5px*var(--fs,1));color:var(--sub);white-space:nowrap;flex-shrink:0}
+/* 두 사람 칸 (v2.1 사용자 요청 — 자놀홈처럼) — 페어 자관을 연동한 탭은 왼쪽·오른쪽 캐릭터 칸, 칸 머리에 얼굴·이름·개수·WRITE */
+.dy-split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media (max-width:720px){.dy-split{grid-template-columns:1fr}}
+.dy-col-hd{display:flex;align-items:center;gap:10px;margin-bottom:10px;min-height:44px}
+.dy-col-hd .nm{font-size:calc(14.5px*var(--fs,1));font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dy-col-hd small{color:var(--faint);font-size:calc(10.5px*var(--fs,1))}
+.dy-col-hd .btn{margin-left:auto;padding:6px 14px;font-size:11px;white-space:nowrap}
+.dy-cf{width:38px;height:38px;border-radius:50%;overflow:hidden;position:relative;flex-shrink:0;box-shadow:0 0 0 2px var(--panel-solid,#fff);transition:.15s}
+.dy-cf.txt{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:calc(14px*var(--fs,1))}
+.dy-cf.go{cursor:var(--cur-pointer,pointer)}
+.dy-cf.go:hover{transform:translateY(-2px)}
+.dy-tabhd .dy-cf+.dy-cf{margin-left:-10px}
 
 /* ---------- 큰 그림 게시판 (v2.1 사용자 요청) — 한 줄에 글 하나, 큰 이미지 + 말머리·제목·날짜 ---------- */
 .feed-list{display:grid;gap:18px;max-width:960px;margin:0 auto}

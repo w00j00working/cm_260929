@@ -14,6 +14,7 @@ export interface DiaryFormValue {
   title: string; date: string; moodId: string; body: string;
   imgIds: string[]; visibility: Visibility;
   catId?: string;    // 구분 탭 (v2.1) — 없으면 구분 없음
+  charId?: string;   // 누구의 일기 (v2.1 — 자관을 연동한 탭) — 페어 자관이면 이 값으로 왼쪽/오른쪽 칸이 갈린다
 }
 
 interface ImgItem { id: string; ref?: string; url?: string; file?: File }
@@ -25,13 +26,17 @@ function ImgThumb({ item }: { item: ImgItem }) {
   return src ? <img src={src} alt="" style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6 }} /> : null;
 }
 
-export function DiaryForm({ initial, moods, cats = [], initialCatId, onSave, onCancel }: {
+export function DiaryForm({ initial, moods, cats = [], initialCatId, charChoices = [], initialCharId, onSave, onCancel }: {
   initial: DiaryPost | null;
   moods: Mood[];
   /** 고를 수 있는 구분 탭 (v2.1) — 비어 있으면 구분 선택 줄을 그리지 않는다 */
   cats?: DiaryCat[];
   /** 새 일기에서 먼저 골라 둘 구분 — 보고 있던 구분 탭 (v2.1) */
   initialCatId?: string;
+  /** 누구의 일기로 쓸지 고를 캐릭터들 (v2.1 — 자관을 연동한 탭) · 하나면 조용히 정해지고 둘 이상이면 고른다 */
+  charChoices?: { id: string; name: string }[];
+  /** 칸 머리의 ＋ WRITE로 들어왔으면 그 캐릭터 */
+  initialCharId?: string;
   onSave: (v: DiaryFormValue) => void;
   onCancel: () => void;
 }) {
@@ -39,6 +44,8 @@ export function DiaryForm({ initial, moods, cats = [], initialCatId, onSave, onC
   const isNew = !initial;
   const [catId, setCatId] = useState<string>(
     initial?.catId ?? (initialCatId && cats.some(c => c.id === initialCatId) ? initialCatId : cats[0]?.id ?? ''));
+  const [charId, setCharId] = useState<string>(
+    initial?.charId ?? (initialCharId && charChoices.some(c => c.id === initialCharId) ? initialCharId : charChoices[0]?.id ?? ''));
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const [title, setTitle] = useState(initial?.title ?? '');
@@ -56,6 +63,7 @@ export function DiaryForm({ initial, moods, cats = [], initialCatId, onSave, onC
     onSave({
       title: title.trim(), date, moodId, body, imgIds, visibility,
       catId: catId && cats.some(c => c.id === catId) ? catId : undefined,   // 목록에 없는 옛 구분은 버린다
+      charId: charId || undefined,
     });
   };
 
@@ -112,6 +120,14 @@ export function DiaryForm({ initial, moods, cats = [], initialCatId, onSave, onC
       </div>
 
       <div>
+        {/* 누구의 일기 (v2.1) — 페어 자관을 연동한 탭에서 양쪽 다 쓸 수 있는 사람(관리자 등)만 고른다. 한 캐릭터뿐이면 조용히 정해진다 */}
+        {charChoices.length > 1 && (
+          <div className="panel widget" style={{ marginBottom: 14 }}>
+            <h4>누구의 일기</h4>
+            <KSelect value={charId} onChange={setCharId}
+              options={charChoices.map(c => ({ value: c.id, label: c.name }))} />
+          </div>
+        )}
         {/* 구분 탭 (v2.1 사용자 요청) — 환경설정 > 다이어리에서 만든 탭 중 하나. 탭이 없는 홈에는 줄 자체가 없다 */}
         {cats.length > 0 && (
           <div className="panel widget" style={{ marginBottom: 14 }}>

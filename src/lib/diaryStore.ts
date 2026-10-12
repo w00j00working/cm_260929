@@ -30,6 +30,8 @@ export interface DiaryPost {
   authorId?: string;
   /** 구분 탭 (v2.1 — 환경설정 > 다이어리에서 관리) — 없으면 구분 없음 */
   catId?: string;
+  /** 누구의 일기인지 (v2.1 — 자관을 연동한 탭) — 그 자관의 멤버 캐릭터 id. 페어 자관이면 이 값으로 왼쪽/오른쪽 칸이 갈린다 */
+  charId?: string;
   /** 쓴 시각 (ISO, v2.1) — 같은 날짜의 일기를 쓴 순서대로 놓기 위해. 없는 옛 일기는 id에 든 시각으로 */
   createdAt?: string;
 }
@@ -50,7 +52,17 @@ export const diaryOrder = (a: DiaryPost, b: DiaryPost) =>
 /* ---------- 구분 탭 (v2.1 사용자 요청 — 탭을 여러 개 만들 수 있는 형식, 환경설정 > 다이어리에서 관리) ---------- */
 /** 구분 탭. link(`relId:auId` — auId가 'base'면 자관 원본)를 정하면 그 탭은 그 자관/AU의 일기가 된다 —
  *  탭 머리에 그 모습의 캐릭터가 보이고, 그 자관 캐릭터에 권한을 받은 회원도 쓸 수 있다. 정하지 않으면 오너의 일기 */
-export interface DiaryCat { id: string; name: string; link?: string }
+export interface DiaryCat {
+  id: string; name: string;
+  /** 쓰는 사람 (v2.1 사용자 요청) — owner: 오너(+상대 오너)끼리 · char: 자관/AU의 캐릭터로. 없으면 link가 있을 때만 char */
+  mode?: 'owner' | 'char';
+  /** 오너 탭의 상대 오너(회원 id) — 정해 두면 「오너 | 상대 오너」 두 칸이 되고 그 회원이 자기 칸에 쓴다 */
+  partnerId?: string;
+  /** 캐릭터 탭의 자관/AU (`relId:auId`) */
+  link?: string;
+}
+/** 탭 방식 — 옛 설정(mode 없음)은 link가 있으면 캐릭터, 아니면 오너 */
+export const diaryCatMode = (c?: DiaryCat): 'owner' | 'char' => c?.mode ?? (c?.link ? 'char' : 'owner');
 export interface DiarySettings { cats: DiaryCat[] }
 export const DEFAULT_DIARY_SETTINGS: DiarySettings = { cats: [] };
 

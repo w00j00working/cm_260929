@@ -11,6 +11,10 @@ export interface RpMessage {
   authorId: string;                 // 작성 회원 (수정/삭제 권한)
   text: string;
   date: string;                     // ISO
+  /** 메신저 모양 방에서 「일반 RP」로 보낸 글 (커플홈 사용자 요청) — 말풍선 대신 원래 역극 모양으로 보인다 */
+  rp?: boolean;
+  /** 사진 메시지 (커플홈 — 메신저 방에서 상대에게 사진을 보냈다는 컨셉) — 파일 id. 글 없이 사진만도 된다 */
+  imgId?: string;
 }
 
 export interface RpRoom {
@@ -26,7 +30,20 @@ export interface RpRoom {
   createdBy: string;
   created: string;
   lastRead: Record<string, string>; // 회원별 마지막 확인 시각 — N 뱃지
+  /** 표시 방식 (커플홈 사용자 요청) — 'imsg'면 아이폰 문자(iMessage) 모양. 없으면 기본(대본형) */
+  style?: 'script' | 'imsg';
   messages: RpMessage[];
+}
+
+/** 입력 중 표시 (v2.1 사용자 요청) — 「캐릭터이름 is typing...」. 방·사람당 문서 하나(id = roomId:userId).
+ *  입력하는 동안 몇 초마다 at을 갱신하고, 보내거나 손을 떼면 지운다. 받는 쪽은 at이 최근인 것만 보여 준다 */
+export interface RpTyping {
+  id: string;
+  roomId: string;
+  authorId: string;
+  name: string;          // 그때 고른 발화자 이름 (지문이면 닉네임)
+  at: number;            // Date.now()
+  visibility: 'member';  // 같은 홈 회원에게 보이게
 }
 
 /**
@@ -38,19 +55,28 @@ export interface RpRoom {
  * (방 문서를 고쳐 돌아다닐 필요가 없다 — 남의 방은 어차피 고칠 수도 없다).
  *
  * 자유 개설(자관 없음) 방은 예전처럼 저장된 memberIds를 쓴다. 개설자는 언제나 참여자.
+ *
+ * 자관 멤버에 **운영자 자캐(own)** 가 있으면 관리자(adminIds)도 당사자다 (커플홈 사용자 제보 — "회원이 만든 역극 방이
+ * 나한테는 안 보인다"): 자캐에는 grants가 없어서(권한은 상대에게 주는 것) 회원이 개설한 방의 참여자가 회원뿐이었다.
+ * 관리자가 만든 방은 개설자로 들어가 있어 티가 안 났다. adminIds는 회원 목록(useMembers → adminIdsOf)에서 넘긴다.
  */
 export function rpMemberIds(
   r: RpRoom,
   rels: { id: string; members: { charId: string }[] }[],
-  chars: { id: string; grants?: { userId: string }[] }[],
+  chars: { id: string; grants?: { userId: string }[]; own?: boolean }[],
+  adminIds: string[] = [],
 ): string[] {
   const ids = new Set<string>();
   if (r.createdBy) ids.add(r.createdBy);
   if (r.relId) {
     const rel = rels.find(x => x.id === r.relId);
+    let hasOwn = false;
     rel?.members.forEach(m => {
-      chars.find(c => c.id === m.charId)?.grants?.forEach(g => ids.add(g.userId));
+      const c = chars.find(x => x.id === m.charId);
+      if (c?.own) hasOwn = true;
+      c?.grants?.forEach(g => ids.add(g.userId));
     });
+    if (hasOwn) adminIds.forEach(id => ids.add(id));
     return [...ids];
   }
   (r.memberIds ?? []).forEach(id => ids.add(id));

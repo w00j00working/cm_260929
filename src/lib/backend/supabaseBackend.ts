@@ -150,6 +150,14 @@ export async function createSupabaseBackend(
       });
     },
 
+    async fetchOne<T extends ListItem>(coll: string, id: string): Promise<T | null> {
+      // RLS가 못 보는 행은 빈 결과로 돌려주므로 「없음」과 「권한 없음」이 같이 null — 상세 화면이 「찾을 수 없음」으로 안내한다
+      const { data, error } = await sb.from(coll).select('id, data').eq('id', id).maybeSingle();
+      if (error || !data) return null;
+      const row = data as { id: string; data: Record<string, unknown> };
+      return { ...(row.data ?? {}), id: row.id } as T;
+    },
+
     async syncList<T extends ListItem>(coll: string, prev: T[], next: T[], uid: string | null) {
       const { inserts, updates, moves, deletes } = diffList(prev, next);
       const toRow = ({ item, sort }: { item: T; sort: number }) => {

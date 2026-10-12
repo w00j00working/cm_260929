@@ -39,7 +39,7 @@ service cloud.firestore {
         'posts', 'guestbook', 'characters', 'relations', 'gallery', 'feed', 'roadview',
         'trpg_logs', 'trpg_log_bodies', 'trpg_chars', 'dotori', 'playlog', 'rp_rooms', 'threads',
         'diary', 'memos', 'commissions', 'applicants', 'moods', 'comments', 'qa_answers', 'rp_messages',
-        'notifications'
+        'notifications', 'rp_typing'
       ];
     }
 

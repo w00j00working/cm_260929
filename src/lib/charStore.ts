@@ -424,6 +424,41 @@ export const charPath = (c: { id: string; slug?: string }) => `/chars/${c.slug?.
 /** 이 자관의 주소 — 별명을 정했으면 그것, 아니면 id */
 export const relPath = (r: { id: string; slug?: string }) => `/rels/${r.slug?.trim() || r.id}`;
 
+/** AU 안에서의 캐릭터 (JN 이식) — JN은 자관의 AU 멤버 설정에 적힌 AU 이름까지 입히지만, 이 홈에는 그 설정이 없어
+ *  캐릭터의 AU 프로필(charWithAu)만 입힌다. rels는 호출부(rpLogSrc)와 모양을 맞추려고 받는다 */
+export function charInAu(c: Character, rels: Relation[], auKey?: string | null): Character {
+  void rels;
+  return auKey ? charWithAu(c, auKey) : c;
+}
+
+/** 자관 안에서 쓰는 1:1 얼굴칸 크롭 (JN 이식) — 자관 페이지 우클릭 「썸네일 위치 조정」으로 잡은 값.
+ *  AU에 따로 정한 값 > 자관 기본(멤버) > 캐릭터의 3:4 썸네일 크롭. 역극 등 자관 밖에서 같은 얼굴칸을
+ *  그릴 때도 이 함수로 — 예전엔 캐릭터 크롭만 봐서 자관에서 맞춘 위치가 역극에서는 안 먹었다 */
+export function relFaceCrop(
+  rel: Relation | undefined, auId: string | undefined, char: Character,
+): import('@/components/ui/CropEditor').CropValue | undefined {
+  if (!rel) return char.thumbCrop;
+  const m = rel.members.find(x => x.charId === char.id);
+  const au = auId && auId !== 'base' ? rel.aus.find(a => a.id === auId) : undefined;
+  return au?.mset?.[char.id]?.faceCrop ?? m?.faceCrop ?? char.thumbCrop;
+}
+
+/** relFaceCrop의 다른 입구 — relId를 주면 그 자관, 없으면 캐릭터가 속한 첫 자관 ·
+ *  auKey(「자관id:AU id」)를 주면 그 AU에서 따로 잡은 값부터 본다 */
+export function faceCropOf(
+  c: Character | undefined, rels: Relation[], opt?: { relId?: string; auKey?: string },
+): import('@/components/ui/CropEditor').CropValue | undefined {
+  if (!c) return undefined;
+  const rel = (opt?.relId ? rels.find(r => r.id === opt.relId) : undefined)
+    ?? rels.find(r => r.members.some(m => m.charId === c.id));
+  let auId: string | undefined;
+  if (rel && opt?.auKey) {
+    const i = opt.auKey.indexOf(':');
+    if (opt.auKey.slice(0, i) === rel.id) auId = opt.auKey.slice(i + 1);
+  }
+  return relFaceCrop(rel, auId, c);
+}
+
 /** 페어 자관의 왼쪽·오른쪽 캐릭터 id (v2.1 — 다이어리 두 사람 칸). pairRight가 있으면 그 캐릭터가 오른쪽, 없으면 등록 순서.
  *  페어가 아니면(3인+ 또는 멤버 2명 미만) null */
 export function pairSides(rel?: Relation): [string, string] | null {

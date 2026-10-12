@@ -320,6 +320,7 @@ export const writeKeyOf = (href: string, secId?: string) =>
  *  권한 설정 화면과 각 페이지가 같은 값을 보도록 한곳에 둔다 */
 const WRITE_DEFAULT: Record<string, MenuPerm> = {
   '/diary': 'admin', '/threads': 'admin', '/chars': 'admin', '/pchars': 'admin', '/tchars': 'admin', '/dotori': 'admin', '/playlog': 'admin',
+  '/trpg': 'admin',   // 로그 백업 — 등록 권한이 있는 회원은 수정도 (trpgPerm.ts, JN 이식)
 };
 export const writeDefaultOf = (path: string): MenuPerm => WRITE_DEFAULT[path] ?? 'member';
 

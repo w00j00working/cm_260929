@@ -1,21 +1,32 @@
 'use client';
-// TRPG 로그 상세 (4.3) — HTML이면 원본 스타일 그대로 격리 렌더(iframe 샌드박스, 스크립트 실행 안 됨),
+// RP LOG 상세 (옛 TRPG 로그, 4.3) — HTML이면 원본 스타일 그대로 격리 렌더(iframe 샌드박스, 스크립트 실행 안 됨),
 // 일반 텍스트면 로그용 기본 서식으로 표시
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useHrefBlock } from '@/components/shell/MenuGuard';
 import { sectionHref, MAIN_SEC, secStamp, useSectionTitle } from '@/lib/sectionStore';
 import { useAuth } from '@/lib/auth';
-import { useLocalList } from '@/lib/postStore';
-import { TrpgLog, TRPG_SEED, TrpgLogBody, TRPG_BODY_SEED, bodyVisibility, showAsHtml, decodeLogText, logNo, saveLogBody } from '@/lib/galleryStore';
+import { useLocalList, newId, useOneDoc } from '@/lib/postStore';
+import { TrpgLog, TRPG_SEED, TrpgLogBody, bodyVisibility, showAsHtml, decodeLogText, logNo, saveLogBody, logPath } from '@/lib/galleryStore';
+import { isValidSlug, slugify } from '@/lib/link';
 import { Relation, REL_SEED, Character, CHAR_SEED, charGrant } from '@/lib/charStore';
+import { applyLogSides, rpSpeakers, rpLogHtml, type RpLogSrc } from '@/lib/rpLog';
+import type { RpMessage } from '@/lib/rpStore';
+import { useMenuSettings } from '@/lib/menuStore';
+import { useMembers } from '@/lib/members';
+import { canEditTrpg, trpgEditorIds } from '@/lib/trpgPerm';
+import { logViewChars, renderLogSrc } from '@/lib/rpLogSrc';
 import { Modal, ConfirmModal } from '@/components/ui/Modal';
+import { TagInput } from '@/components/ui/TagInput';
 import { getBlob, putBlob, useBlobUrl } from '@/lib/blobStore';
 import { PageTitle, EditableDesc } from '@/components/ui/PageText';
-import { KInput, KSelect, KDate, KTextarea } from '@/components/ui/Kit';
+import { KInput, KSelect, KDate, KTextarea, KCheck } from '@/components/ui/Kit';
 import { ColorField } from '@/components/ui/ColorField';
 import { CropEditor, CropImg, CropValue } from '@/components/ui/CropEditor';
 import { useToast } from '@/components/ui/Toast';
+
+/** 발화 수정 창에서 「지문(서술)」을 고르는 값 */
+const DESC_KEY = '__desc';
 
 /** 로그 렌더 프레임 — 대형 문서도 안정적으로 로드되도록 srcdoc 대신 Blob URL 사용 */
 function LogFrame({ frameRef, html, title, onFrameLoad }: {
@@ -39,7 +50,7 @@ function LogFrame({ frameRef, html, title, onFrameLoad }: {
 }
 
 export default function TrpgDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id: key } = useParams<{ id: string }>();   // id 또는 페이지 주소 별명 (커플홈 — 캐릭터·자관과 같게)
   const router = useRouter();
   const { user, isAdmin } = useAuth();
   const toast = useToast();
@@ -47,22 +58,37 @@ export default function TrpgDetailPage() {
   // 본문은 목록과 분리 저장 (v2.0 — 나만보기 로그도 목록엔 뜨게 하려고 목록 문서의 질의 조건이
   // listHidden으로 느슨해졌는데, 본문까지 같이 있으면 그 질의로 본문도 함께 새어 나간다).
   // 이 목록에 없는 id는 "권한이 없어 애초에 안 받아졌다"는 뜻 — 서버가 알아서 걸러 준다
-  const [bodies, setBodies] = useLocalList<TrpgLogBody>('ohome.trpgbody.v1', TRPG_BODY_SEED);
   const [rels] = useLocalList<Relation>('ohome.rels.v1', REL_SEED);
   const [allChars] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
+  // 수정 권한 (커플홈 사용자 요청 — "수정 권한은 멤버에게도"): 관리자 · 등록한 본인 · 등록 권한이 있는 회원(editorIds, trpgPerm.ts)
+  const [menuSet] = useMenuSettings();
+  const members = useMembers();
+  // 태그 자동완성 후보 — 모든 로그의 태그, 많이 쓰인 순 (커플홈)
+  const allTags = useMemo(() => {
+    const m: Record<string, number> = {};
+    logs.forEach(x => (x.tags ?? []).forEach(t => { m[t] = (m[t] ?? 0) + 1; }));
+    return Object.entries(m).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+  }, [logs]);
   const [delAsk, setDelAsk] = useState(false);
   const [bodyText, setBodyText] = useState<string | null>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const gotHeightRef = useRef(false);   // 안쪽에서 높이 보고가 왔는지 (안 오면 기본 높이로 되돌린다)
 
-  const l = logs.find(x => x.id === id);
+  // 별명을 방금 바꾸면 주소(옛 별명)로는 잠깐 못 찾는다 — 직전에 찾았던 id를 기억해 두고 그걸로 이어 받는다
+  // (안 그러면 아래 「없음 → 홈」 효과가 새 주소로 옮기기 전에 먼저 튕겨 낸다)
+  const lastIdRef = useRef<string | null>(null);
+  const found = logs.find(x => x.id === key || (x.slug ?? '') === key);
+  const l = found ?? (lastIdRef.current ? logs.find(x => x.id === lastIdRef.current) : undefined);
+  useEffect(() => { if (found) lastIdRef.current = found.id; }, [found]);
+  const id = l?.id ?? key;   // 아래는 전부 진짜 id로 (본문 문서·저장·비밀번호 열람 기억)
+  // 본문은 **이 로그 한 건만** 읽고 쓴다 (커플홈 사용자 제보 — 전체 본문을 받느라 느렸다). 권한이 없으면 애초에 안 온다 (undefined)
+  const [bd, saveBody, removeBody] = useOneDoc<TrpgLogBody>('ohome.trpgbody.v1', l ? l.id : undefined);
   /* 이 글이 속한 곳이 비공개면 주소로 들어와도 열리지 않게 (v2.0 사용자 요청).
      글 주소에는 섹션이 없어 MenuGuard가 못 막는다 — 글을 읽어 소속을 알아낸 여기서 판정한다.
      **다른 early return보다 먼저 불러야 한다**(훅이므로 렌더마다 개수가 같아야 한다) */
   const blocked = useHrefBlock(l && sectionHref('trpg', l.secId ?? MAIN_SEC));
   // 큰 글씨 — 추가 섹션이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
   const tt = useSectionTitle('trpg', l?.secId, 'TRPG LOG');
-  const bd = bodies.find(x => x.id === id);   // 분리 저장된 본문 — 권한이 없으면 애초에 안 온다 (undefined)
 
   // 접근권한 (4.3) — 관리자 / 공개범위 충족 / 비밀번호 입력자 /
   // 연동 자관의 상대방(멤버 캐릭터에 권한이 부여된 회원)은 무조건 열람 (3차 회원-캐릭터 연결, v1.9)
@@ -72,7 +98,8 @@ export default function TrpgDetailPage() {
     return ch ? !!charGrant(ch, user.id) : false;
   });
   const baseAllowed = !!l && (isAdmin || isRelPartner
-    || l.visibility === 'public' || (l.visibility === 'member' && !!user));
+    || l.visibility === 'public' || (l.visibility === 'member' && !!user)
+    || (!!user && l.authorId === user.id));   // 내가 등록한 로그 (커플홈 — 회원도 등록한다)
 
   // 비밀번호 열람 (4.3) — 세션 동안 유지
   const [unlocked, setUnlocked] = useState(false);
@@ -84,9 +111,10 @@ export default function TrpgDetailPage() {
   // 이 로그를 볼 수 없으면(없거나, 권한도 비밀번호도 없으면) 홈으로 — 예전엔 이 자리에 "열람 권한이
   // 없습니다" 문구만 남아 있었는데, 로그아웃 등으로 권한을 잃은 직후엔 계속 그 화면에 머무를 이유가
   // 없다는 사용자 요청으로 홈으로 보낸다 (v2.0)
+  const leavingRef = useRef(false);   // 삭제해서 떠나는 중 — 「없는 로그 → 홈」으로 튕기지 않고 목록으로 가게 (커플홈)
   useEffect(() => {
     if (!loaded) return;
-    if (!l) { router.replace('/'); return; }
+    if (!l) { if (!leavingRef.current) router.replace('/'); return; }
     if (!baseAllowed && !unlocked && !l.password) router.replace('/');
   }, [loaded, l, baseAllowed, unlocked, router]);
   const tryUnlock = () => {
@@ -101,8 +129,8 @@ export default function TrpgDetailPage() {
   // 로그 정보 수정 — 메타 + 본문 교체(파일/직접 입력) + 썸네일 교체(이미지 크롭/단색·그라데이션)
   const [eOpen, setEOpen] = useState(false);
   const [e, setE] = useState({
-    noText: '', title: '', catchphrase: '', writer: '', withText: '',
-    relId: 'none', date: '', visibility: 'public' as TrpgLog['visibility'], password: '',
+    noText: '', slug: '', tags: [] as string[], title: '', catchphrase: '', writer: '', withText: '',
+    relId: 'none', auId: 'base', date: '', visibility: 'public' as TrpgLog['visibility'], password: '',
     listHidden: false,   // 목록 표시 여부 (v2.0 — 접근권한과 별개)
   });
   // 본문 교체
@@ -123,11 +151,131 @@ export default function TrpgDetailPage() {
   const [eColorMode, setEColorMode] = useState<'grad' | 'solid'>('grad');
   const [eC1, setEC1] = useState('#4c5a6e');
   const [eC2, setEC2] = useState('#242b36');
+  // 모양 (원본 발화가 있는 역극 로그만) — EDIT에서 메신저/대본·HTML/텍스트·프로필 사진을 바꾸면 저장할 때 다시 그린다 (사용자 요청)
+  const [eStyle, setEStyle] = useState<'script' | 'imsg'>('imsg');
+  const [eFmt, setEFmt] = useState<'html' | 'text'>('html');
+  const [eFaces, setEFaces] = useState(true);
+
+  // 편집모드 (커플홈 사용자 요청 — "본문 편집을 따로 두지 말고 편집모드 버튼 … 개별 롤플을 편집 … 우클릭이나 호버로").
+  // 원본 발화(src)가 있는 로그: 프레임 안에 심은 스크립트(아래 inject)가 발화 위 호버 도구(✎ ＋ ✕)와 우클릭 메뉴를 띄우고,
+  // 고른 동작을 postMessage로 알려 오면 여기서 작은 수정 창을 열어 그 발화만 고친 뒤 같은 모양으로 다시 그린다
+  // (널 오리진 샌드박스라 바깥은 프레임 문서를 직접 못 만진다). 원본이 없는 로그(파일·직접 작성)는 발화 단위가 없어 본문 글을 그대로 고치는 칸
+  const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false); editingRef.current = editing;
+  const [eBody, setEBody] = useState('');
+  const [saving, setSaving] = useState(false);
+  /** 발화 하나 수정·추가 창 — i는 원본 발화 번호(data-i), insert면 그 아래에 */
+  const [msgEdit, setMsgEdit] = useState<{ mode: 'edit' | 'insert'; i: number; charId: string; text: string } | null>(null);
+  const [msgDel, setMsgDel] = useState<number | null>(null);
+  const toggleEdit = () => {
+    if (editing) { setEditing(false); return; }
+    if (!bd?.src) setEBody(bodyText ?? '');
+    // 이 기능 전에 그린 본문에는 발화 번호(data-i)가 없다 — 켜는 김에 원본 발화로 한 번 다시 그려 저장 (같은 내용, 번호만 붙는다)
+    else if (bd.src.fmt === 'html' && bodyText && !/ data-i="/.test(bodyText)) void commitSrc(bd.src);
+    setEditing(true);
+  };
+  /** 프레임에 편집모드 켜짐/꺼짐 알리기 — 토글할 때와 문서가 새로 뜰 때(onFrameLoad) */
+  const sendEditMode = () => {
+    try { frameRef.current?.contentWindow?.postMessage({ __logEditMode: editingRef.current && !!bd?.src }, '*'); } catch { /* 무시 */ }
+  };
+  useEffect(() => { sendEditMode(); }, [editing, bd?.src]);   // eslint-disable-line react-hooks/exhaustive-deps
+  /** 본문 문서 갈아 끼우기 (+ 목록 문서 일부) — 편집모드는 그대로 두고 본문만 다시 로드한다 */
+  const saveBodyPatch = (patch: Partial<TrpgLogBody>, logPatch: Partial<TrpgLog>) => {
+    if (!l) return;
+    const editorIds = trpgEditorIds(menuSet, l.secId ?? MAIN_SEC, members, l.editorIds);
+    const nextBody: TrpgLogBody = {
+      id, ...bd, body: '', bodyId: undefined, ...patch,
+      authorId: bd?.authorId ?? l.authorId, editorIds,
+      visibility: bodyVisibility(l), ...secStamp(l.secId ?? MAIN_SEC),
+    };
+    // 본문 문서는 뒤에 붙인다 (기존 본문들의 자리가 밀려 재저장되지 않게 — saveEdit와 같은 이유)
+    saveBody(nextBody);
+    setLogs(logs.map(x => x.id === id ? { ...x, ...logPatch, editorIds } : x));
+    setBodyText(null);   // 본문 다시 로드 — 프레임이 다시 뜨면 onFrameLoad가 편집모드를 다시 켠다
+  };
+  /** 원본 발화를 바꾼 뒤 저장 — 같은 모양으로 다시 그린다 */
+  const commitSrc = async (nextSrc: RpLogSrc) => {
+    if (!l || saving) return;
+    if (!nextSrc.msgs.length) { toast('발화가 하나도 없습니다 — 한 줄은 남겨 주세요'); return; }
+    setSaving(true);
+    try {
+      const r = await renderLogSrc(nextSrc, l.title, allChars, rels, l.relId, l.auId);
+      const logPatch: Partial<TrpgLog> = {};
+      // 「동행」 칸이 자동값(말한 캐릭터 이름)이었으면 바뀐 발화자에 맞춘다 — 직접 고쳐 둔 것은 그대로
+      const prevAuto = bd?.src
+        ? rpSpeakers(bd.src.msgs, logViewChars(allChars, rels, l.relId, l.auId).viewChars).map(c => c.name).join(' · ')
+        : undefined;
+      if (!l.withText || l.withText === prevAuto) logPatch.withText = r.withText;
+      saveBodyPatch({ ...(await saveLogBody(r.bodyText)), bodyHtml: nextSrc.fmt === 'html', src: nextSrc }, logPatch);
+      toast('저장했습니다');
+    } finally {
+      setSaving(false);
+    }
+  };
+  /** 원본이 없는 로그 — 본문 글을 그대로 고친 것 저장 */
+  const saveRawBody = async () => {
+    if (!l || saving) return;
+    setSaving(true);
+    try {
+      saveBodyPatch({ ...(await saveLogBody(eBody)) }, {});
+      setEditing(false);
+      toast('본문을 저장했습니다');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const blankMsg = (prev?: RpMessage): RpMessage =>
+    ({ id: newId(), kind: 'desc', authorId: '', text: '', date: prev?.date ?? new Date().toISOString() });
+  /** 수정·추가 창 SAVE */
+  const saveMsgEdit = () => {
+    const s = bd?.src, me = msgEdit;
+    if (!s || !me) return;
+    if (!me.text.trim()) { toast('내용을 입력해 주세요'); return; }
+    const base = me.mode === 'edit' ? s.msgs[me.i] : blankMsg(s.msgs[me.i]);
+    const next: RpMessage = me.charId === DESC_KEY
+      ? { ...base, kind: 'desc', charId: undefined, text: me.text }
+      : { ...base, kind: 'char', charId: me.charId, text: me.text };
+    const msgs = [...s.msgs];
+    if (me.mode === 'edit') msgs[me.i] = next; else msgs.splice(me.i + 1, 0, next);
+    setMsgEdit(null);
+    void commitSrc({ ...s, msgs });
+  };
+  /** 프레임 안에서 고른 동작(수정·아래에 추가·삭제) — onMsg는 한 번만 등록되므로 ref로 최신 함수를 본다 */
+  const editActRef = useRef<(action: string, i: number) => void>(() => {});
+  editActRef.current = (action, i) => {
+    const s = bd?.src;
+    if (!s || !editingRef.current) return;
+    const m = s.msgs[i];
+    if (!m) return;
+    const charId = m.kind === 'char' ? (m.charId ?? '') : DESC_KEY;
+    if (action === 'delete') setMsgDel(i);
+    else if (action === 'insert') setMsgEdit({ mode: 'insert', i, charId, text: '' });
+    else setMsgEdit({ mode: 'edit', i, charId, text: m.text });
+  };
 
   const saveEdit = async () => {
     if (!e.title.trim()) { toast('시나리오 타이틀을 입력해 주세요'); return; }
+    // 페이지 주소 별명 (커플홈) — 캐릭터와 같은 규칙, 다른 로그의 id·별명과 겹치면 안 된다
+    const slug = e.slug.trim();
+    if (slug && slug !== (l?.slug ?? '')) {
+      if (!isValidSlug(slug)) { toast('주소는 영문 소문자·숫자·하이픈만 쓸 수 있습니다'); return; }
+      if (logs.some(x => x.id !== id && (x.id === slug || x.slug === slug))) { toast('이미 사용 중인 주소입니다 — 다른 주소를 입력해 주세요'); return; }
+    }
     // 본문 교체 준비 — 본문은 목록과 분리 저장이라(v2.0) 이제 TrpgLogBody 조각으로 만든다
     let bodyPatch: Partial<TrpgLogBody> = {};
+    const nextRelId = e.relId === 'none' ? undefined : e.relId;
+    const nextAuId = e.relId !== 'none' && e.auId !== 'base' ? e.auId : undefined;
+    if (bodyMode === 'keep' && bd?.src) {
+      // 원본 발화가 있는 로그 — 모양이나 자관·AU가 바뀌었으면 그 설정으로 다시 그린다 (AU가 바뀌면 이름·사진도 그 AU 것)
+      const s = bd.src;
+      const changed = s.style !== eStyle || s.fmt !== eFmt || s.faces !== eFaces
+        || (l?.relId ?? undefined) !== nextRelId || (l?.auId ?? undefined) !== nextAuId;
+      if (changed) {
+        const nextSrc = { ...s, style: eStyle, fmt: eFmt, faces: eFaces };
+        const r = await renderLogSrc(nextSrc, e.title.trim(), allChars, rels, nextRelId, nextAuId);
+        bodyPatch = { ...(await saveLogBody(r.bodyText)), bodyHtml: eFmt === 'html', src: nextSrc };
+      }
+    }
     if (bodyMode === 'file' && eFile) {
       const text = await decodeLogText(eFile);
       bodyPatch = {
@@ -150,12 +298,16 @@ export default function TrpgDetailPage() {
     const nextLog: TrpgLog = {
       ...(l as TrpgLog),
       noText: e.noText.trim() || undefined,
+      slug: slug || undefined,
+      tags: e.tags.length ? e.tags : undefined,   // 태그 (커플홈)
       title: e.title.trim(), catchphrase: e.catchphrase.trim() || undefined,
       writer: e.writer.trim(), withText: e.withText.trim(),
       relId: e.relId === 'none' ? undefined : e.relId,
+      auId: e.relId !== 'none' && e.auId !== 'base' ? e.auId : undefined,
       date: e.date || undefined,
       visibility: e.visibility, password: e.password.trim() || undefined,
       listHidden: e.listHidden,
+      editorIds: trpgEditorIds(menuSet, l?.secId ?? MAIN_SEC, members, l?.editorIds),   // 등록 권한이 있는 회원 = 수정 가능 (저장할 때마다 최신으로)
       ...thumbPatch,
       // 예전엔 본문이 이 문서에 있었다 — 저장할 때마다 확실히 비워서(구버전 잔재 정리),
       // 나만보기 로그가 목록엔 뜨면서 본문까지 같이 새어 나가는 일이 없게 한다 (v2.0)
@@ -172,14 +324,20 @@ export default function TrpgDetailPage() {
       originalFileId: bd?.originalFileId ?? l?.originalFileId,
       originalName: bd?.originalName ?? l?.originalName,
       bodyHtml: bodyDisp === 'auto' ? undefined : bodyDisp === 'html',
+      // 원본 발화는 본문을 그대로 둘 때만 유지 — 파일·직접 입력으로 갈아 끼우면 더는 맞지 않는다
+      src: bodyMode === 'keep' ? bd?.src : undefined,
+      authorId: bd?.authorId ?? l?.authorId,
+      editorIds: nextLog.editorIds,
       ...bodyPatch,
       visibility: bodyVisibility(nextLog),
       ...secStamp(nextLog.secId ?? MAIN_SEC),   // 소속 (v2.0) — 본문 문서도 비공개 판정을 받게
     };
     // 새 본문 문서는 뒤에 붙인다 (v2.0 포크 제보) — 앞에 끼우면 기존 본문 전체의 자리가 밀려
     // 재저장 대상이 되고, 큰 본문이 쌓인 홈에서는 그 합이 쓰기 한도를 넘어 저장이 실패했다
-    setBodies(bd ? bodies.map(x => x.id === id ? nextBody : x) : [...bodies, nextBody]);
+    saveBody(nextBody);
     if (bodyMode !== 'keep') setBodyText(null); // 본문 다시 로드
+    // 별명을 바꿨으면 지금 주소(옛 별명)로는 더 못 찾으니 새 주소로 — id 주소에서 바꾼 경우에도 별명 주소를 보여 준다
+    if ((nextLog.slug ?? '') !== (l?.slug ?? '')) router.replace(logPath(nextLog));
     setEOpen(false);
     setBodyMode('keep'); setEFile(null); setEText('');
     setThumbMode('keep'); setEThumb(null); setEThumbUrl(''); setEThumbCrop(undefined);
@@ -204,6 +362,9 @@ export default function TrpgDetailPage() {
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== frameRef.current?.contentWindow) return;
+      // 편집모드 — 프레임 안에서 고른 발화 동작 (커플홈)
+      const ed = (e.data as { __logEdit?: { action?: unknown; i?: unknown } })?.__logEdit;
+      if (ed && typeof ed.action === 'string' && typeof ed.i === 'number') { editActRef.current(ed.action, ed.i); return; }
       const h = (e.data as { __logH?: unknown })?.__logH;
       if (typeof h === 'number' && isFinite(h) && frameRef.current) {
         // scrollHeight는 최소한 뷰포트(=현재 iframe 높이)만큼 보고되므로 여기에 여백을
@@ -226,6 +387,7 @@ export default function TrpgDetailPage() {
     if (!frameRef.current) return;
     gotHeightRef.current = false;
     frameRef.current.style.height = '240px';
+    sendEditMode();   // 새로 뜬 문서에 편집모드 상태 알리기 (저장 뒤 다시 그려져도 편집모드가 이어진다)
     // 보고가 하나도 안 오는 문서(스크립트가 막힌 경우)만 기본 높이로 되돌린다.
     // 3초로 늘렸다 — 리포터가 2초마다 같은 값이라도 다시 알려 오므로, 그 사이에 제자리를 찾는다
     setTimeout(() => {
@@ -255,9 +417,28 @@ export default function TrpgDetailPage() {
   }
 
   const rel = rels.find(r => r.id === l.relId);
+  const canEdit = canEditTrpg(l, { loggedIn: !!user, isAdmin, id: user?.id });
+  const canDelete = isAdmin || (!!user && l.authorId === user.id);   // 삭제는 본인과 관리자만
+  const srcChars = logViewChars(allChars, rels, l.relId, l.auId);   // 편집모드 수정 창의 발화자 목록 (자관 멤버 먼저)
+  const msgCharOptions = (() => {
+    const base = [
+      ...srcChars.members.map(c => ({ value: c.id, label: c.name })),
+      ...srcChars.others.map(c => ({ value: c.id, label: `그 밖 · ${c.name}` })),
+      { value: DESC_KEY, label: '지문(서술)' },
+    ];
+    // 지워진 캐릭터의 발화 — 고르는 목록엔 없지만 지금 값은 보여 준다
+    return msgEdit && !base.some(o => o.value === msgEdit.charId) ? [{ value: msgEdit.charId, label: '(삭제된 캐릭터)' }, ...base] : base;
+  })();
+  // 프레임 안 편집 도구의 색 — 홈의 포인트색을 따른다 (프레임 문서에는 CSS 변수가 없어 값으로 넣는다)
+  const accent = (typeof window !== 'undefined' && getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()) || '#5d636d';
   const body = bodyText ?? '';
   // 지정값이 있으면 그대로 — 직접 쓴 글이 태그처럼 보이는 문자 때문에 HTML로 오판되던 것 방지
+  /* 메신저 모양 역극 로그의 좌우는 보는 사람 기준 (커플홈 사용자 요청) — 관리자는 자캐가 오른쪽, 역극 참여 회원은
+     자기 캐릭터가 오른쪽, 그 밖(방문자·참여 안 한 회원)은 관리자의 캐릭터가 오른쪽. 좌우가 이미 박힌 옛 본문은 그대로 */
+  const ownIds = allChars.filter(c => c.own).map(c => c.id);
+  const grantedIds = user && !isAdmin ? allChars.filter(c => !!charGrant(c, user.id)).map(c => c.id) : [];
   const html = showAsHtml({ bodyHtml: bd?.bodyHtml ?? l.bodyHtml }, body);
+  const sidedBody = html ? applyLogSides(body, grantedIds.length ? grantedIds : ownIds) : body;
   // 원본 파일도 분리 저장된 쪽 우선, 없으면 구버전 로그의 내장 값 (v2.0)
   const origFileId = bd?.originalFileId ?? l.originalFileId;
   const origName = bd?.originalName ?? l.originalName;
@@ -310,29 +491,74 @@ r(1);})();
 </scr${''}ipt><style>
 /* height:auto — 로그 문서가 html/body에 100%를 걸어 두면 내용과 무관하게 뷰포트만큼 커진다 */
 html,body{margin:0!important;padding:0!important;height:auto!important;min-height:0!important}
+</style><scr${''}ipt>
+// 편집모드 (커플홈) — 바깥(상세 페이지)이 {__logEditMode:true}를 보내면 발화([data-i]) 위 호버 도구(✎ ＋ ✕)와 우클릭 메뉴를 켠다.
+// 고른 동작은 {__logEdit:{action,i}}로 바깥에 알리고, 바깥이 그 발화만 고쳐 문서를 다시 그린다 (널 오리진이라 바깥은 이 문서를 못 만진다)
+(function(){var on=false,tools=null,menu=null;
+function send(a,i){parent.postMessage({__logEdit:{action:a,i:i}},'*')}
+function tgt(e){var t=e.target;while(t&&t.nodeType===1&&!t.hasAttribute('data-i'))t=t.parentNode;return t&&t.nodeType===1?t:null}
+function hide(){if(menu){if(menu.parentNode)menu.parentNode.removeChild(menu);menu=null}}
+function mk(label,act,i,cls){var b=document.createElement('button');b.type='button';b.textContent=label;b.className=cls||'';
+b.onmousedown=function(ev){ev.preventDefault();ev.stopPropagation()};b.onclick=function(ev){ev.stopPropagation();ev.preventDefault();hide();send(act,i)};return b}
+document.addEventListener('contextmenu',function(e){if(!on)return;var t=tgt(e);if(!t)return;e.preventDefault();hide();var i=+t.getAttribute('data-i');
+menu=document.createElement('div');menu.className='lg-menu';menu.appendChild(mk('✎ 수정하기','edit',i));menu.appendChild(mk('＋ 아래에 추가','insert',i));menu.appendChild(mk('✕ 삭제하기','delete',i,'danger'));
+document.body.appendChild(menu);var w=menu.offsetWidth,maxX=document.documentElement.scrollWidth-w-6;menu.style.left=Math.max(4,Math.min(e.pageX,maxX))+'px';menu.style.top=e.pageY+'px'});
+document.addEventListener('mousedown',function(e){if(menu&&!menu.contains(e.target))hide()});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')hide()});
+document.addEventListener('mouseover',function(e){if(!on)return;var t=tgt(e);if(!t)return;if(tools&&tools.parentNode===t)return;
+if(!tools){tools=document.createElement('div');tools.className='lg-tools'}tools.innerHTML='';var i=+t.getAttribute('data-i');
+tools.appendChild(mk('✎','edit',i));tools.appendChild(mk('＋','insert',i));tools.appendChild(mk('✕','delete',i,'danger'));t.appendChild(tools)});
+window.addEventListener('message',function(e){var d=e.data||{};if(typeof d.__logEditMode==='boolean'){on=d.__logEditMode;document.documentElement.classList.toggle('lg-edit',on);
+if(!on){hide();if(tools&&tools.parentNode)tools.parentNode.removeChild(tools)}}});
+})();
+</scr${''}ipt><style>
+/* 편집모드 도구 (커플홈) — 바깥이 켤 때만 (html.lg-edit) */
+.lg-edit [data-i]{position:relative;cursor:pointer}
+.lg-edit [data-i]:hover{outline:1.5px dashed color-mix(in srgb,${accent} 55%,transparent);outline-offset:4px;border-radius:10px}
+.lg-tools{position:absolute;top:-14px;right:0;display:none;gap:2px;z-index:9;background:#fff;border:1px solid #d9dbe0;border-radius:8px;padding:2px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.lg-edit [data-i]:hover>.lg-tools{display:flex}
+.lg-tools button,.lg-menu button{border:0;background:transparent;cursor:pointer;font:inherit;font-size:11px;line-height:1;padding:5px 7px;border-radius:6px;color:#3c434d;white-space:nowrap}
+.lg-tools button:hover,.lg-menu button:hover{background:color-mix(in srgb,${accent} 10%,#fff);color:${accent}}
+.lg-tools button.danger:hover,.lg-menu button.danger:hover{background:rgba(200,60,60,.1);color:#b23a3a}
+.lg-menu{position:absolute;z-index:99;display:flex;flex-direction:column;background:#fff;border:1px solid #d9dbe0;border-radius:9px;padding:4px;box-shadow:0 6px 18px rgba(0,0,0,.15);min-width:132px}
+.lg-menu button{text-align:left;padding:7px 10px;font-size:12px}
 </style>`;
   /** 주입 위치 — <!DOCTYPE ...> 가 있으면 그 **바로 뒤**에, 없으면 doctype을 만들어 앞에.
    *  표준 모드를 지켜야 body 높이가 진짜 내용 높이가 된다 (위 주석 참조) */
-  const dt = /^\s*<!doctype[^>]*>/i.exec(body);
-  const srcDoc = dt
-    ? body.slice(0, dt[0].length) + inject + body.slice(dt[0].length)
-    : `<!DOCTYPE html>${inject}${body}`;
+  const buildDoc = (doc: string) => {
+    const dt = /^\s*<!doctype[^>]*>/i.exec(doc);
+    return dt ? doc.slice(0, dt[0].length) + inject + doc.slice(dt[0].length) : `<!DOCTYPE html>${inject}${doc}`;
+  };
+  const srcDoc = buildDoc(sidedBody);
+  // 텍스트 모양으로 저장된 역극 로그도 편집모드에서는 임시로 대본 모양 HTML로 그려 발화 단위로 고칠 수 있게 (저장은 텍스트 그대로)
+  const editDoc = editing && bd?.src && !html
+    ? buildDoc(rpLogHtml({ title: l.title, sub: l.withText }, bd.src.msgs, srcChars.viewChars,
+        { time: bd.src.time, forBoard: true, style: 'script', rightIds: [], neutralSides: true, noMeta: bd.src.noMeta }))
+    : null;
 
   return (
     <section className="page">
       <div className="page-head">
         <PageTitle href={tt.href}>{tt.title}</PageTitle>
-        <p>{logNo(l)}{[l.writer, l.withText].filter(Boolean).map(x => ` · ${x}`).join('')}{l.date ? ` · ${l.date.replace(/-/g, '.')}` : ''}</p>
+        <p>{logNo(l)}{[l.writer, l.withText].filter(Boolean).map(x => ` · ${x}`).join('')}{l.date ? ` · ${l.date.replace(/-/g, '.')}` : ''}{l.tags?.length ? ` · ${l.tags.map(t => '#' + t).join(' ')}` : ''}</p>
         <div className="head-actions">
-          {rel && <button className="btn btn-dark" onClick={() => router.push(`/rels/${rel.id}`)}>{rel.name} ›</button>}
-          {isAdmin && <button className="btn btn-dark" onClick={() => {
+          {/* AU 로그면 AU 이름까지, 누르면 그 AU 페이지로 (커플홈) */}
+          {rel && (() => {
+            const au = l.auId ? rel.aus.find(a => a.id === l.auId && a.id !== 'base') : undefined;
+            const href = au ? `/rels/${rel.id}?au=${encodeURIComponent(au.id)}` : `/rels/${rel.id}`;
+            return <button className="btn btn-dark" onClick={() => router.push(href)}>{au ? `${rel.name} · ${au.label || 'AU'}` : rel.name} ›</button>;
+          })()}
+          {/* 편집모드 — 발화 위 호버 도구·우클릭 메뉴로 하나씩 고친다 (원본이 없는 로그는 본문 글 그대로) */}
+          {canEdit && <button className={`btn ${editing ? 'btn-dark' : 'btn-ghost'}`} onClick={toggleEdit}>{editing ? '편집 끝' : '편집모드'}</button>}
+          {canEdit && <button className="btn btn-dark" onClick={() => {
             setE({
-              noText: l.noText ?? '', title: l.title, catchphrase: l.catchphrase ?? '', writer: l.writer,
-              withText: l.withText, relId: l.relId ?? 'none', date: l.date ?? '',
+              noText: l.noText ?? '', slug: l.slug ?? '', tags: l.tags ?? [], title: l.title, catchphrase: l.catchphrase ?? '', writer: l.writer,
+              withText: l.withText, relId: l.relId ?? 'none', auId: l.auId ?? 'base', date: l.date ?? '',
               visibility: l.visibility, password: l.password ?? '', listHidden: !!l.listHidden,
             });
             // 본문·썸네일 교체 상태 초기화 (기본: 현재 것 유지)
             setBodyMode('keep'); setEFile(null); setEText(bodyText ?? '');
+            if (bd?.src) { setEStyle(bd.src.style); setEFmt(bd.src.fmt); setEFaces(bd.src.faces); }
             const bh = bd?.bodyHtml ?? l.bodyHtml;
             setBodyDisp(bh === undefined ? 'auto' : bh ? 'html' : 'text');
             // 「현재 유지」에서도 위치·확대를 조정할 수 있게 지금 크롭값에서 시작한다
@@ -341,7 +567,7 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
             if (l.thumbColor) { setEC1(l.thumbColor.c1); if (l.thumbColor.c2) setEC2(l.thumbColor.c2); }
             setEOpen(true);
           }}>EDIT</button>}
-          {isAdmin && <button className="btn btn-dark" onClick={() => setDelAsk(true)}>DELETE</button>}
+          {canDelete && <button className="btn btn-dark" onClick={() => setDelAsk(true)}>DELETE</button>}
         </div>
       </div>
 
@@ -356,9 +582,29 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
         {l.catchphrase && (
           <p style={{ fontSize: 11.5, color: 'var(--faint)', letterSpacing: '.14em', marginBottom: 16 }}>{l.catchphrase}</p>
         )}
-        {html ? (
-          /* 원본 스타일·스크립트 유지 — 널 오리진 샌드박스라 사이트 데이터에는 접근 불가 (6.3 격리) */
-          <LogFrame frameRef={frameRef} html={srcDoc} title={l.title} onFrameLoad={onFrameLoad} />
+        {editing && !bd?.src ? (
+          /* 원본 발화가 없는 로그(파일·직접 작성) — 본문 글을 그대로 고친다 */
+          <div className="lsrc-wrap">
+            <div className="lsrc-bar">
+              <button className="btn btn-dark" disabled={saving} onClick={saveRawBody}>{saving ? '저장 중…' : 'SAVE'}</button>
+              <button className="btn btn-ghost" disabled={saving} onClick={() => setEditing(false)}>CANCEL</button>
+              <small className="hint" style={{ margin: 0 }}>
+                {html ? 'HTML 원문을 그대로 고칩니다 — 이 로그는 원본 발화가 없어 발화 단위로는 고칠 수 없습니다' : '본문을 그대로 고칩니다'}
+              </small>
+            </div>
+            <KTextarea maxRows={40} value={eBody} onChange={ev => setEBody(ev.target.value)}
+              style={{ minHeight: 320, ...(html ? { fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12 } : {}) }} />
+          </div>
+        ) : html || editDoc ? (
+          <>
+            {editing && (
+              <p className="hint" style={{ margin: '0 0 10px' }}>
+                편집모드 — 발화 위에 마우스를 올리면 ✎(수정) ＋(아래에 추가) ✕(삭제)가 뜨고, 우클릭 메뉴로도 됩니다. 다 고쳤으면 「편집 끝」
+              </p>
+            )}
+            {/* 원본 스타일·스크립트 유지 — 널 오리진 샌드박스라 사이트 데이터에는 접근 불가 (6.3 격리) */}
+            <LogFrame frameRef={frameRef} html={editDoc ?? srcDoc} title={l.title} onFrameLoad={onFrameLoad} />
+          </>
         ) : (
           body
             ? <div className="log-plain">{body}</div>
@@ -423,14 +669,27 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
             <KInput placeholder="№ 표기 (선택 — 비우면 자동)" value={e.noText} onChange={ev => setE(s => ({ ...s, noText: ev.target.value }))}
               style={{ maxWidth: 200 }} />
           </div>
-          <KInput placeholder="캐치프레이즈 (선택)" value={e.catchphrase} onChange={ev => setE(s => ({ ...s, catchphrase: ev.target.value }))} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <KInput placeholder="캐치프레이즈 (선택)" value={e.catchphrase} onChange={ev => setE(s => ({ ...s, catchphrase: ev.target.value }))} />
+            {/* 페이지 주소 별명 (커플홈 사용자 요청 — 무작위 id 대신 /trpg/별명) — id 주소는 계속 열린다 */}
+            <KInput placeholder={`페이지 주소 (비우면 ${l.id})`} value={e.slug} onChange={ev => setE(s => ({ ...s, slug: slugify(ev.target.value) }))}
+              style={{ maxWidth: 220 }} />
+          </div>
+          {/* 태그 (커플홈) — 다른 로그의 태그가 입력 중 아래에 자동완성 */}
+          <TagInput value={e.tags} onChange={v => setE(s => ({ ...s, tags: v }))} suggestions={allTags} placeholder="태그 (Enter로 추가 · 기존 태그는 아래에 자동완성)" />
           <div style={{ display: 'flex', gap: 8 }}>
             <KInput placeholder="라이터 (선택)" value={e.writer} onChange={ev => setE(s => ({ ...s, writer: ev.target.value }))} />
             <KInput placeholder="같이 간 사람 (선택)" value={e.withText} onChange={ev => setE(s => ({ ...s, withText: ev.target.value }))} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <KSelect minWidth={140} value={e.relId} onChange={v => setE(s => ({ ...s, relId: v }))}
+            <KSelect minWidth={140} value={e.relId} onChange={v => setE(s => ({ ...s, relId: v, auId: 'base' }))}
               options={[{ value: 'none', label: '자관 연동 없음' }, ...rels.map(r => ({ value: r.id, label: r.name }))]} />
+            {/* 고른 자관에 AU가 있으면 어느 AU의 로그인지 — 자관 페이지에서 AU별로 따로 보인다 */}
+            {e.relId !== 'none' && (rels.find(r => r.id === e.relId)?.aus ?? []).some(a => a.id !== 'base') && (
+              <KSelect minWidth={120} value={e.auId} onChange={v => setE(s => ({ ...s, auId: v }))}
+                options={[{ value: 'base', label: '원본' },
+                  ...(rels.find(r => r.id === e.relId)?.aus ?? []).filter(a => a.id !== 'base').map(a => ({ value: a.id, label: a.label }))]} />
+            )}
             <KDate value={e.date} onChange={v => setE(s => ({ ...s, date: v }))} style={{ flex: 1 }} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -516,6 +775,24 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
             </div>
           )}
 
+          {/* 모양 (원본 발화가 있는 역극 로그) — 저장하면 원본 발화로 다시 그린다 (사용자 요청: "대본/메신저도 에딧에서 수정") */}
+          {bd?.src && bodyMode === 'keep' && (
+            <>
+              <label className="k-label" style={{ margin: '4px 0 0' }}>모양 (역극 로그)</label>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="mini-seg">
+                  <button className={eStyle === 'imsg' ? 'on' : ''} onClick={() => setEStyle('imsg')}>메신저</button>
+                  <button className={eStyle === 'script' ? 'on' : ''} onClick={() => setEStyle('script')}>대본</button>
+                </div>
+                <div className="mini-seg">
+                  <button className={eFmt === 'html' ? 'on' : ''} onClick={() => setEFmt('html')}>HTML</button>
+                  <button className={eFmt === 'text' ? 'on' : ''} onClick={() => setEFmt('text')}>텍스트</button>
+                </div>
+                {eFmt === 'html' && <KCheck label="프로필 사진" checked={eFaces} onChange={setEFaces} />}
+                <small className="hint" style={{ margin: 0 }}>바꾸고 저장하면 원본 발화로 다시 그려집니다</small>
+              </div>
+            </>
+          )}
           {/* 본문 교체 — 기본은 현재 본문 유지 */}
           <label className="k-label" style={{ margin: '4px 0 0' }}>본문</label>
           <div className="mini-seg" style={{ justifySelf: 'start' }}>
@@ -538,7 +815,7 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
             </>
           )}
           {bodyMode === 'text' && (
-            <KTextarea style={{ minHeight: 160, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12 }}
+            <KTextarea maxRows={36} style={{ minHeight: 160, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12 }}
               placeholder="HTML 코드 통째 붙여넣기 또는 텍스트 직접 작성" value={eText} onChange={ev => setEText(ev.target.value)} />
           )}
 
@@ -563,12 +840,38 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
           onApply={c => { setEThumbCrop(c); setECropOpen(false); }} />
       )}
 
+      {/* 편집모드 — 발화 하나 수정·추가 창 */}
+      <Modal open={!!msgEdit} onClose={() => setMsgEdit(null)} title={msgEdit?.mode === 'insert' ? '발화 추가 (아래에)' : '발화 수정'} small
+        actions={<>
+          <button className="btn btn-ghost" onClick={() => setMsgEdit(null)}>CANCEL</button>
+          <button className="btn btn-dark" disabled={saving} onClick={saveMsgEdit}>{saving ? '저장 중…' : 'SAVE'}</button>
+        </>}>
+        {msgEdit && (
+          <div style={{ display: 'grid', gap: 9 }}>
+            <KSelect minWidth={170} value={msgEdit.charId} onChange={v => setMsgEdit(s => (s ? { ...s, charId: v } : s))} options={msgCharOptions} />
+            <KTextarea maxRows={18} value={msgEdit.text} onChange={ev => setMsgEdit(s => (s ? { ...s, text: ev.target.value } : s))}
+              placeholder={msgEdit.charId === DESC_KEY ? '지문(서술)' : '대사'} style={{ minHeight: 120 }} />
+          </div>
+        )}
+      </Modal>
+      <ConfirmModal open={msgDel !== null} title="이 발화를 삭제할까요?" body="삭제한 발화는 되돌릴 수 없습니다."
+        onClose={() => setMsgDel(null)}
+        buttons={[
+          { label: 'DELETE', kind: 'accent', onClick: () => {
+            const s = bd?.src, i = msgDel;
+            setMsgDel(null);
+            if (s && i !== null) void commitSrc({ ...s, msgs: s.msgs.filter((_, j) => j !== i) });
+          } },
+          { label: 'CANCEL', kind: 'ghost', onClick: () => setMsgDel(null) },
+        ]} />
+
       <ConfirmModal open={delAsk} title="로그를 삭제하시겠습니까?" body="삭제한 로그는 복구할 수 없습니다."
         onClose={() => setDelAsk(false)}
         buttons={[
           { label: 'DELETE', kind: 'accent', onClick: () => {
+            leavingRef.current = true;
             setLogs(logs.filter(x => x.id !== l.id));
-            setBodies(bodies.filter(x => x.id !== l.id));   // 분리 저장된 본문도 함께 삭제 (v2.0)
+            removeBody();   // 분리 저장된 본문도 함께 삭제 (v2.0)
             router.push(tt.href);
           } },
           { label: 'CANCEL', kind: 'ghost', onClick: () => setDelAsk(false) },

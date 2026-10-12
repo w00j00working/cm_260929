@@ -18,8 +18,9 @@ import {
 import { RelQuestionSet, RELQ_SEED, RELQ_KEY, CP_LABEL } from '@/lib/relqStore';
 import { putBlob } from '@/lib/blobStore';
 import { GrantsEditor } from '@/components/chars/GrantsEditor';
-import { TrpgLog, TRPG_SEED } from '@/lib/galleryStore';
-import { RpRoom, RP_SEED } from '@/lib/rpStore';
+import { TrpgLog, TRPG_SEED, logPath } from '@/lib/galleryStore';
+import { RpRoom, RP_SEED, rpMemberIds } from '@/lib/rpStore';
+import { useMembers, adminIdsOf } from '@/lib/members';
 import { useFonts } from '@/lib/fontStore';
 import { Tip, KInput, KTextarea, KSelect, KRadio, KCheck } from '@/components/ui/Kit';
 import { Modal, ConfirmModal, useConfirmDelete } from '@/components/ui/Modal';
@@ -245,6 +246,8 @@ export default function RelDetailPage() {
   const [chars, setChars, charsLoaded] = useLocalList<Character>('ohome.chars.v1', CHAR_SEED);
   const [logs] = useLocalList<TrpgLog>('ohome.trpg.v1', TRPG_SEED);
   const [rooms] = useLocalList<RpRoom>('ohome.rp.v1', RP_SEED);
+  const membersAll = useMembers();
+  const adminIds = adminIdsOf(membersAll);   // 자관 기반 방은 운영자 자캐가 있으면 관리자도 당사자 (JN 이식)
   const [tab, setTab] = useState<'tl' | 'qa'>('tl');
   const [auId, setAuId] = useState('base');
   const [oneMode, setOneMode] = useState<boolean | null>(null);
@@ -358,6 +361,15 @@ export default function RelDetailPage() {
 
   // 별명 주소로도 열린다 (v2.0 사용자 요청 — 주소를 나중에 바꿔도 옛 주소가 살아 있게)
   const rel = findByKey(rels, id);
+  // 주소의 ?au=<AU id>로 들어오면 그 AU를 펼친 채 시작 (JN 이식 — 로그 백업 상세의 자관·AU 버튼이 여기로 온다)
+  useEffect(() => {
+    if (!rel) return;
+    const p = new URLSearchParams(window.location.search).get('au');
+    if (!p) return;
+    const a = rel.aus.find(x => x.id !== 'base' && x.id === p);
+    if (a) setAuId(a.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rel?.id, loaded]);
 
   // 자관별 페이지 테마 (4.18 방식) — 별도 테마컬러면 홈 전체 팔레트를 임시 전환, 벗어나면 원복.
   // AU별 (v1.9): AU에 테마를 지정했으면 그것, 미지정이면 base(원본) 테마 따라가기
@@ -482,11 +494,19 @@ export default function RelDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rel, auId, qaQuery],
   );
-  const relLogs = useMemo(() => logs.filter(l => l.relId === rel?.id), [logs, rel]);
-  // 역극 연동 (4.9) — 내가 참여한 방 + 공개 전환된 완결 방만 (비참여 방은 존재 자체 비노출)
-  const relRooms = useMemo(() => rooms.filter(rm => rm.relId === rel?.id
-    && ((user && rm.memberIds.includes(user.id)) || (rm.status === 'done' && rm.isPublic))),
-    [rooms, rel, user]);
+  // 역극·로그는 **보고 있는 AU의 것만** (JN 이식 — AU 역극이 원본 페이지에도 떠서 뒤섞였다).
+  // auId가 없는 방·로그는 원본(base) 것이다. 없거나 지워진 AU도 원본으로
+  const auKeyOf = (id?: string) => (id && id !== 'base' && rel?.aus.some(x => x.id === id) ? id : 'base');
+  const relLogs = useMemo(() => logs.filter(l => l.relId === rel?.id && auKeyOf(l.auId) === auId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [logs, rel, auId]);
+  // 역극 연동 (4.9) — 내가 참여한 방 + 공개 전환된 완결 방만 (비참여 방은 존재 자체 비노출).
+  // 참여자는 역극 페이지와 같은 계산(rpMemberIds)으로 — 자관 기반 방은 저장된 memberIds에 개설자만 있어서
+  // 상대 오너에게는 자기가 참여한 역극이 이 목록에 뜨지 않았다 (JN 이식)
+  const relRooms = useMemo(() => rooms.filter(rm => rm.relId === rel?.id && auKeyOf(rm.auId) === auId
+    && ((user && rpMemberIds(rm, rels, chars, adminIds).includes(user.id)) || (rm.status === 'done' && rm.isPublic))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rooms, rel, user, rels, chars, auId, adminIds]);
 
   if (!loaded) return <section className="page" />;
   if (!rel || (rel.visibility === 'private' && !isAdmin) || (rel.visibility === 'member' && !user)) {
@@ -1288,9 +1308,9 @@ export default function RelDetailPage() {
         )}
         {!au?.hideLog && (
         <div className="panel widget" style={{ margin: 0, ...(au?.hideRp ? { gridColumn: '1/-1' } : null) }}>
-          <h4>로그 <span className="more" onClick={() => router.push('/trpg')}>더보기 ›</span></h4>
+          <h4>로그 <span className="more" onClick={() => router.push(`/trpg?rel=${rel.id}&au=${auId}`)}>더보기 ›</span></h4>
           {relLogs.length > 0 ? relLogs.map(l => (
-            <div key={l.id} className="dday-row" style={{ cursor: 'var(--cur-pointer,pointer)' }} onClick={() => router.push(`/trpg/${l.id}`)}>
+            <div key={l.id} className="dday-row" style={{ cursor: 'var(--cur-pointer,pointer)' }} onClick={() => router.push(logPath(l))}>
               {/* 번호 없이 제목만 — 연동 리스트에서는 순번이 의미가 없다 (사용자 확정) */}
               <span>{l.title}</span>
               <b style={{ fontSize: 11, color: 'var(--faint)' }}>{l.date?.replace(/-/g, '.') ?? ''}</b>

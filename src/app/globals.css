@@ -206,6 +206,11 @@ a{color:inherit;text-decoration:none}
 .vol i{position:absolute;left:0;top:0;height:100%;width:62%;background:var(--bgm-vol);border-radius:3px}
 .vol i::after{content:"";position:absolute;right:-4px;top:-3.5px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 
+/* 역극 — 상대가 입력 중 표시 (사용자 요청): 메시지 스크롤 영역 안쪽 맨 아래에 겹쳐 띄운다.
+   흐름에 끼우면 생겼다 사라질 때 영역 높이가 바뀌어 스크롤이 덜컹거린다 — 겹치면 높이가 그대로다 */
+.rp-msgs-wrap{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+.rp-msgs-wrap > .rp-msgs{flex:1;min-height:0}
+.rp-typing{position:absolute;left:0;right:0;bottom:0;pointer-events:none;font-size:calc(10.5px*var(--fs,1));color:var(--faint);font-style:italic;padding:3px 18px 5px;background:linear-gradient(to top,var(--panel) 60%,transparent)}
 /* ---------- 공통 레이아웃 ---------- */
 /* 하단 여백은 BGM 미니 플레이어(약 73px)를 가리지 않는 최소치 — 과하면 불필요한 스크롤 발생 */
 .page{max-width:1180px;margin:0 auto;padding:16px 28px 80px;animation:fade .35s}
@@ -467,22 +472,105 @@ a{color:inherit;text-decoration:none}
 .rp-head{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .rp-head b{font-size:calc(14px*var(--fs,1))}
 .rp-head small{color:var(--faint);font-size:calc(10.5px*var(--fs,1));display:block}
-.rp-msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px}
+/* 말풍선 최소 폭 (커플홈 사용자 요청 — "모바일에서 보면 말풍선이 너무 작다"): 폭은 비율(78%·72%)로 정하되
+   이 픽셀보다 좁아지면 비율을 버리고 최소 폭을, 화면이 그보다도 좁으면 100%를 쓴다 */
+.rp-msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px;--bub-min:300px}
 /* 역극 스크롤바 — 기본(8px)보다 얇게 */
 .rp-msgs::-webkit-scrollbar,.rp-rooms-list::-webkit-scrollbar{width:5px}
 .rp-msgs::-webkit-scrollbar-thumb,.rp-rooms-list::-webkit-scrollbar-thumb{border-width:1px}
 /* 가로 20px 축소 (v2.0 사용자 요청) — 폭 비율은 그대로 두고 실제 너비만 줄인다 */
-.msg{display:flex;gap:10px;max-width:calc(78% - 20px);--cc:93,99,109;position:relative} /* 말풍선 = 캐릭터 테마색 저알파 (6장) */
+.msg{display:flex;gap:10px;max-width:min(100%,max(var(--bub-min,300px),calc(78% - 20px)));--cc:93,99,109;position:relative} /* 말풍선 = 캐릭터 테마색 저알파 (6장) */
 .msg .face{width:38px;height:38px;border-radius:11px;flex-shrink:0;position:relative;overflow:hidden}
 .msg .who{font-size:calc(10.5px*var(--fs,1));color:rgb(var(--cc));font-weight:700;margin-bottom:3px;letter-spacing:.05em}
 .msg .bub{padding:10px 14px;border-radius:13px;border-top-left-radius:4px;font-size:calc(12.5px*var(--fs,1));line-height:1.7;
   background:rgba(var(--cc),.10);border:1px solid rgba(var(--cc),.22);color:var(--ink);white-space:pre-line}
 .msg.me{margin-left:auto;flex-direction:row-reverse;text-align:right}
-.msg.me .bub{border-radius:13px;border-top-right-radius:4px}
+.msg.me .bub{border-radius:13px;border-top-right-radius:4px;text-align:left}   /* 말풍선만 오른쪽, 글씨는 왼쪽 정렬 (사용자 요청 — 이름은 오른쪽 그대로) */
 /* 지문(디스크립션) — 캐릭터 없이 가운데 정렬 서술 (v1.8) */
 .msg-desc{align-self:center;text-align:center;max-width:82%;font-size:calc(12.5px*var(--fs,1));line-height:1.8;color:#4a505a;padding:2px 0;white-space:pre-line;position:relative}
+/* 역극 메신저 모양 (커플홈 사용자 요청) — 아이폰 문자(iMessage): 내 쪽 파란 말풍선 · 상대 회색, 꼬리는 묶음 마지막에만 */
+.rp-msgs.imsg{gap:2px;padding:14px 12px;background:var(--panel-solid)}
+.im-sys{align-self:center;text-align:center;max-width:82%;font-size:calc(11.5px*var(--fs,1));line-height:1.7;color:#8e8e93;margin:6px 0;white-space:pre-line;position:relative}
+.im-msg{display:flex;align-items:flex-end;gap:6px;max-width:min(100%,max(var(--bub-min,300px),72%));position:relative}
+.im-msg.them{align-self:flex-start;gap:14px}   /* 얼굴이 말풍선 꼬리(왼쪽 10px)에 가리지 않게 간격을 둔다 */
+.im-msg.me{align-self:flex-end;flex-direction:row-reverse}
+.im-msg.first{margin-top:8px}
+.im-face{width:26px;height:26px;flex-shrink:0;align-self:flex-end}
+.im-face .f{width:26px;height:26px;border-radius:50%;position:relative;overflow:hidden}
+.im-col{display:flex;flex-direction:column;min-width:0}
+.im-msg.me .im-col{align-items:flex-end}
+/* 보낸 캐릭터 이름 — 말풍선 왼쪽 끝에 맞춘다 (사용자 제보: 글씨 시작선(12px 안쪽)에 맞추니 떠 보였다) */
+.im-who{font-size:calc(10px*var(--fs,1));color:#8e8e93;margin:0 0 3px 4px;font-family:var(--sans-base);white-space:nowrap}
+.im-bub{position:relative;padding:7px 12px;border-radius:18px;font-size:calc(13px*var(--fs,1));line-height:1.45;white-space:pre-line;word-break:break-word;font-family:var(--sans-base);
+  background:#e9e9eb;color:#000;max-width:100%;min-width:calc(13px*var(--fs,1) + 24px)}   /* 최소 폭 = 한글 한 글자 + 여백 (사용자 확정 — 「...」만 쳐도 찌그러지지 않게) */
+.im-msg.me .im-bub{background:#0b84ff;color:#fff;text-align:left}   /* 말풍선만 오른쪽, 글씨는 왼쪽 정렬 (사용자 요청) */
+.im-bub.short{text-align:center}   /* 두세 글자짜리는 가운데 */
+/* 묶음 안에서는 안쪽 모서리를 덜 둥글게 */
+.im-msg.them:not(.last) .im-bub{border-bottom-left-radius:5px}
+.im-msg.them:not(.first) .im-bub{border-top-left-radius:5px}
+.im-msg.me:not(.last) .im-bub{border-bottom-right-radius:5px}
+.im-msg.me:not(.first) .im-bub{border-top-right-radius:5px}
+/* 꼬리 — 묶음의 마지막 말풍선에만. 아이폰 문자의 꼬리 그리기: 말풍선색 네모(::before)를 모서리 밖으로 8px 내밀고,
+   그 바깥을 배경색 네모(::after)의 둥근 모서리로 깎아 가는 꼬리만 남긴다 (사용자 제보 — 전 모양은 각진 덩어리가 튀어나왔다) */
+.im-msg.last .im-bub::before{content:"";position:absolute;bottom:0;width:20px;height:20px;z-index:0}
+.im-msg.them.last .im-bub::before{left:-7px;background:#e9e9eb;border-bottom-right-radius:15px}
+.im-msg.me.last .im-bub::before{right:-8px;background:#0b84ff;border-bottom-left-radius:15px}
+.im-msg.last .im-bub::after{content:"";position:absolute;bottom:0;width:10px;height:20px;background:var(--panel-solid);z-index:1}
+.im-msg.them.last .im-bub::after{left:-10px;border-bottom-right-radius:10px}
+.im-msg.me.last .im-bub::after{right:-10px;border-bottom-left-radius:10px}
+/* 날짜 지문 — 「2008.07.03 …」으로 시작하는 지문은 아이폰 문자의 날짜 줄처럼 (날짜는 굵게) */
+.im-sys.im-date{margin:16px 0 8px;font-size:calc(11px*var(--fs,1))}
+.im-sys.im-date b{font-weight:700;color:#8e8e93;margin-right:4px}
+/* 수정·삭제 — 말풍선 안쪽(가운데 쪽) 옆에 세로 가운데로. 위로 띄우면 첫 줄에서, 바깥쪽에 두면 가장자리에서 잘린다 (사용자 제보) */
+.im-msg .m-act{position:absolute;top:50%;transform:translateY(-50%);left:calc(100% + 6px);right:auto;display:flex;gap:2px;background:var(--panel-solid);border:1px solid var(--line);border-radius:7px;padding:1px 2px;opacity:0;transition:.13s;z-index:3;white-space:nowrap}
+.im-msg.me .m-act{left:auto;right:calc(100% + 6px)}
+.im-msg:hover .m-act,.im-sys:hover .m-act{opacity:1}
+.im-sys .m-act{position:absolute;top:50%;transform:translateY(-50%);left:calc(100% + 6px);display:flex;gap:2px;background:var(--panel-solid);border:1px solid var(--line);border-radius:7px;padding:1px 2px;opacity:0;transition:.13s;white-space:nowrap}
+/* 입력줄 — 둥근 칸 + 파란 ↑ 버튼 */
+.rp-input.imsg{align-items:flex-end}
+/* 「RP」 동그란 토글 — ↑ 버튼과 같은 크기로 그 왼쪽에. 켜지면 진하게 (사용자 확정: 체크박스는 안 예뻤다) */
+.im-actions{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:flex-end;align-self:stretch;flex-shrink:0}
+/* 납작한 네모 (사용자 확정 — 동그라미는 ↑ 위에 묘한 여백을 만들었다): 22px 높이라 RP+↑가 입력칸 높이 안에 들어간다 */
+.im-plain{width:34px;height:22px;border-radius:8px;border:1.5px solid var(--line);background:var(--panel-solid);color:var(--sub);font-size:10px;font-weight:700;letter-spacing:.04em;display:grid;place-items:center;flex-shrink:0;transition:.15s;font-family:var(--sans-base)}
+.im-plain:hover{border-color:var(--sub)}
+.im-plain.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* 사진 메시지 (커플홈 — 메신저 방): ＋ 버튼 · 보내기 전 미리보기 · 사진 말풍선 */
+.im-attach{width:34px;height:34px;border-radius:50%;background:#e9e9eb;color:#6b6b70;font-size:20px;line-height:1;display:grid;place-items:center;flex-shrink:0;transition:.15s;font-family:var(--sans-base)}
+.im-line{display:flex;align-items:center;gap:9px;min-width:0}   /* ＋ 버튼을 입력칸 세로 가운데에 (사용자 요청) */
+.im-line textarea{flex:1;min-width:0}
+.im-attach:hover{background:#dcdce0;color:#3a3a3f}
+.im-field{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+/* 보내기 전 미리보기 — 작게 (사용자 요청: 입력칸 위에 크게 뜨는 게 거슬렸다) */
+.im-pv{position:relative;width:56px;height:42px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+.im-pv img{width:100%;height:100%;object-fit:cover;display:block}
+.im-pv .x{position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:9px;display:grid;place-items:center}
+/* 사진 — 아이폰 문자처럼 말풍선 없이 둥근 사진만 (사용자 확정). 글이 같이 있으면 아래에 글 말풍선. 누르면 크게 */
+.im-pic{width:150px;max-width:100%;border-radius:18px;overflow:hidden;cursor:zoom-in;line-height:0;margin-bottom:4px}
+.im-pic img{display:block;width:100%;height:auto;max-height:200px;object-fit:cover}
+.rp-pic{max-width:240px;border-radius:10px;overflow:hidden;cursor:zoom-in;margin-bottom:6px;line-height:0}
+.rp-pic img{display:block;width:100%;height:auto}
+/* 메신저 방 안의 「일반 RP」 글 — 원래 역극 모양 그대로, 말풍선 묶음과 떨어뜨린다 */
+.rp-msgs.imsg .msg,.rp-msgs.imsg .msg-desc{margin-top:10px;margin-bottom:10px}   /* 좌우 margin은 건드리지 않는다 — .msg.me의 margin-left:auto가 오른쪽 정렬을 맡는다 */
+/* 메신저 방의 일반 RP — 얼굴 칸을 문자 말풍선과 같은 크기·간격(26px + 14px)으로 두어 말풍선 출발선이 맞는다.
+   이어지는 글은 빈 칸(.spacer)만 두고, 내 글은 얼굴이 아예 없다 */
+.rp-msgs.imsg .msg{gap:14px;align-items:flex-end}
+.rp-msgs.imsg .msg .face{width:26px;height:26px;border-radius:50%}
+.rp-msgs.imsg .msg .face.spacer{visibility:hidden}
+.rp-input.imsg textarea{border-radius:20px;padding:10px 14px;min-height:40px!important;background:var(--panel-solid)}
+.im-send{width:34px;height:34px;border-radius:50%;background:#0b84ff;color:#fff;font-size:17px;font-weight:700;display:grid;place-items:center;flex-shrink:0;transition:.15s}
+.im-send:hover{background:#0a74e0}
 .rp-input{border-top:1px solid var(--line);padding:12px;display:flex;gap:9px;align-items:flex-end}
 .rp-input .btn{white-space:nowrap}
+/* 잘라 둔 이전 대화 더보기 (커플홈) — 메시지 영역 맨 위 가운데 */
+.rp-topbtns{display:flex;gap:6px;justify-content:center;align-self:center;margin:2px auto 10px;flex-shrink:0}
+/* 알림음 종 — 켜짐·꺼짐·호버 모두 테마(포인트)색 계열 안에서만 (커플홈 사용자 확정 — 검정·회색으로 빠지지 않게).
+   꺼짐은 포인트색을 흐리게 섞은 색에 빗금, 테두리도 옅은 포인트색 */
+.rp-bell{width:30px;height:30px;padding:0;display:grid;place-items:center;color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line));background:color-mix(in srgb,var(--accent) 6%,#fff);transition:.15s}
+.rp-bell svg{display:block}
+.rp-bell.off{color:color-mix(in srgb,var(--accent) 45%,var(--faint));border-color:color-mix(in srgb,var(--accent) 18%,var(--line));background:#fff}
+.rp-bell:hover{color:var(--accent);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,#fff)}
+.rp-bell.off:hover{color:color-mix(in srgb,var(--accent) 70%,var(--faint));border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 7%,#fff)}
+.rp-more{padding:4px 12px;font-size:calc(10.5px*var(--fs,1));flex-shrink:0}
 .char-pick{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:var(--cur-pointer,pointer);flex-shrink:0;position:relative}
 .char-pick .f{width:40px;height:40px;border-radius:11px;border:2px solid var(--ink);position:relative;overflow:hidden}
 .char-pick small{font-size:calc(9px*var(--fs,1));color:var(--sub);white-space:nowrap}
@@ -492,17 +580,28 @@ a{color:inherit;text-decoration:none}
 .rp-pick-pop button:hover{background:#eef0f2}
 .rp-pick-pop .f{width:24px;height:24px;border-radius:7px;flex-shrink:0;position:relative;overflow:hidden}
 /* 메시지 액션 (본인 수정/삭제 — 호버) */
-.msg .m-act{position:absolute;top:-8px;right:0;display:flex;gap:2px;background:var(--panel-solid);border:1px solid var(--line);border-radius:7px;padding:1px 2px;opacity:0;transition:.13s}
-.msg.me .m-act{right:auto;left:0}
+/* 수정·삭제 — 말풍선 안쪽(가운데 쪽) 옆에 세로 가운데로 (사용자 제보 — 위·바깥쪽에 두면 카드 가장자리에서 잘렸다) */
+.msg .m-act{position:absolute;top:50%;transform:translateY(-50%);left:calc(100% + 6px);right:auto;display:flex;gap:2px;background:var(--panel-solid);border:1px solid var(--line);border-radius:7px;padding:1px 2px;opacity:0;transition:.13s;white-space:nowrap;z-index:3}
+.msg.me .m-act{left:auto;right:calc(100% + 6px)}
 .msg:hover .m-act,.msg-desc:hover .m-act{opacity:1}
-.msg-desc .m-act{position:absolute;top:-10px;right:0;display:flex;gap:2px;background:var(--panel-solid);border:1px solid var(--line);border-radius:7px;padding:1px 2px;opacity:0;transition:.13s}
+.msg-desc .m-act{position:absolute;top:50%;transform:translateY(-50%);left:calc(100% + 6px);display:flex;gap:2px;background:var(--panel-solid);border:1px solid var(--line);border-radius:7px;padding:1px 2px;opacity:0;transition:.13s;white-space:nowrap}
 .m-act button{font-size:9.5px;letter-spacing:.05em;color:var(--sub);padding:2px 7px;border-radius:5px}
 .m-act button:hover{color:var(--ink);background:#eef0f2}
-@media(max-width:1080px){.rp-layout{grid-template-columns:220px 1fr 150px}}
-/* 역극 모바일 (v1.9 사용자 확정) — 방 목록은 위 접힘 바, 입력창 포커스 중엔 역극 영역만 */
+/* 역극 모바일 (v1.9 사용자 확정) — 방 목록은 위 접힘 바, 입력창 포커스 중엔 역극 영역만.
+   중간 폭(≤1080px)부터 바로 이 배치로 (커플홈 사용자 요청 — 세 열을 좁혀 쓰던 중간 단계는 뺐다) */
 .rp-mfold{display:none}
-@media (max-width:620px){
+@media (max-width:1080px){
   .rp-layout{display:flex;flex-direction:column;height:auto;gap:10px}
+  /* 모바일 배치에선 역극 안쪽 스크롤바를 숨긴다 (사용자 요청 — 손가락으로 넘기니 보일 필요가 없다). 스크롤 자체는 그대로 */
+  .rp-msgs,.rp-rooms-list{scrollbar-width:none}
+  .rp-msgs::-webkit-scrollbar,.rp-rooms-list::-webkit-scrollbar{display:none;width:0}
+  /* 말풍선이 최소 폭까지 넓어지면 옆에 EDIT/DEL 메뉴 둘 자리가 없다(왼쪽 밖으로 잘린다) — 좁은 화면에선 말풍선 위 모서리에 */
+  .im-msg.me .m-act,.msg.me .m-act{left:auto;right:0;top:0;transform:translateY(-100%)}
+  .im-sys .m-act,.msg-desc .m-act{left:auto;right:0;top:0;transform:translateY(-100%)}
+  /* 채팅 머리(제목·캐릭터명·진행중/RENAME/END/LOG/DELETE)는 숨긴다 (사용자 확정) — 접힘 바에 제목과 캐릭터 이름이 있다.
+     방 관리 버튼은 PC에서 쓴다 */
+  .rp-head{display:none}
+  .rp-mfold b .rl{font-weight:400;color:var(--faint);font-size:calc(11px*var(--fs,1));letter-spacing:0}
   .rp-mfold{display:flex;align-items:center;justify-content:space-between;gap:10px;order:0;
     background:var(--panel);border-radius:var(--radius);box-shadow:var(--sh-sm);padding:12px 16px;text-align:left;transition:.15s}
   .rp-mfold b{font-size:calc(13px*var(--fs,1));min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -514,7 +613,7 @@ a{color:inherit;text-decoration:none}
   .rp-layout.mopen > .tagside{display:block}
   /* 채팅창을 화면 아래까지 (v2.0 사용자 요청 — 「아래 여백 줄이고 채팅창을 더 아래로」)
      100dvh − 위 요소들(상단바·제목·접힘 바)·BGM 바 여유. 64vh 고정은 아래가 뭉텅 남았다 */
-  .rp-chat{order:3;height:calc(100dvh - 245px);min-height:380px}
+  .rp-chat{order:3;height:calc(100dvh - 187px - var(--top-h,58px));min-height:380px}
   .page-rp{padding-bottom:14px}
   /* 입력창 포커스 — 페이지 제목·접힘 바 없이 역극 영역만 (v1.9) */
   .page.rp-focus .page-head{display:none}
@@ -1571,7 +1670,22 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
 .trpg-basic{display:grid;grid-template-columns:1fr 1fr}
 .trpg-basic .list-item{min-width:0}
 @media (max-width:900px){.trpg-basic{grid-template-columns:1fr}}
+/* 역극 로그 미리보기 (커플홈) — 로그 모달 안, 길면 안에서 스크롤 */
+.rp-log-pre{margin:0;max-height:240px;overflow:auto;padding:12px 14px;border:1.5px solid var(--line);border-radius:9px;background:rgba(127,127,127,.06);white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Consolas,monospace;font-size:calc(11.5px*var(--fs,1));line-height:1.7;color:var(--text,inherit)}
 .log-plain{white-space:pre-wrap;font-size:calc(13px*var(--fs,1));line-height:1.8;color:#2c3037;font-family:var(--sans)}
+/* RP LOG 편집모드 — 원본 발화가 없는 로그의 본문 글 편집 칸 (발화 단위 편집은 프레임 안 도구로, trpg/[id]) */
+.lsrc-wrap{display:grid;gap:12px}
+.lsrc-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* 태그 입력칸 (커플홈 — RP LOG 태그): 칩 + 입력 + 자동완성 목록 (components/ui/TagInput) */
+.tagin{position:relative;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:38px;padding:5px 8px;background:#fff;border:1.5px solid var(--line);border-radius:var(--radius-s);cursor:text;transition:.18s}
+.tagin:focus-within{border-color:var(--focus-bd,var(--steel-3));box-shadow:var(--focus-ring,0 0 0 3px rgba(60,67,77,.12))}
+.tagin-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:14px;font-size:calc(11.5px*var(--fs,1));background:color-mix(in srgb,var(--accent) 9%,#fff);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent)}
+.tagin-chip button{border:0;background:transparent;color:inherit;cursor:var(--cur-pointer,pointer);font-size:13px;line-height:1;padding:0 1px;opacity:.7}
+.tagin-chip button:hover{opacity:1}
+.tagin-in{flex:1;min-width:120px;border:0;outline:none;background:transparent;font-size:calc(13px*var(--fs,1));color:var(--ink);padding:3px 2px}
+.tagin-list{position:absolute;left:0;top:calc(100% + 4px);z-index:30;min-width:200px;max-width:100%;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:9px;padding:4px;box-shadow:var(--sh-md);max-height:220px;overflow:auto}
+.tagin-list button{text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:6px;font-size:calc(12.5px*var(--fs,1));color:var(--ink);cursor:var(--cur-pointer,pointer)}
+.tagin-list button:hover,.tagin-list button.on{background:color-mix(in srgb,var(--accent) 9%,#fff);color:var(--accent)}
 
 /* ---------- 게시판 공통 (4.2) ---------- */
 .toolrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap}

@@ -59,12 +59,14 @@ export function CropImg({ src, crop, alt }: { src: string; crop?: CropValue; alt
 }
 
 /** 파일 참조 + 크롭을 적용해 표시하는 썸네일 (없으면 플레이스홀더) */
-export function CroppedBlobImg({ fileRef, crop, ph, label, alt }: {
+export function CroppedBlobImg({ fileRef, crop, ph, phStyle, label, alt }: {
   fileRef?: string; crop?: CropValue; ph?: string; label?: string; alt?: string;
+  /** 자리표시자 배경 직접 지정 (커플홈 — 캐릭터 테마색, lib/color의 phStyle) */
+  phStyle?: React.CSSProperties;
 }) {
   const url = useBlobUrl(fileRef);
   if (!url) {
-    return <div className={`ph ${ph ?? ''}`} style={{ width: '100%', height: '100%' }}>{label && <span>{label}</span>}</div>;
+    return <div className={`ph ${ph ?? ''}`} style={{ width: '100%', height: '100%', ...phStyle }}>{label && <span>{label}</span>}</div>;
   }
   return <CropImg src={url} crop={crop} alt={alt} />;
 }

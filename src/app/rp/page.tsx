@@ -47,11 +47,6 @@ function Face({ ch, className, crop }: { ch?: Character; className: string; crop
   );
 }
 
-const fmtHM = (iso: string) => {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
 import { useMembers, adminIdsOf } from '@/lib/members';
 import { pushNotif } from '@/lib/notifStore';
 
@@ -671,8 +666,7 @@ export default function RpPage() {
                           {m.imgId && <div className="rp-pic" onClick={() => setLbImg(m.imgId!)}><BlobImg fileRef={m.imgId} ph="" label="" /></div>}
                           {m.text}
                         </div>
-                        {/* 메신저 방에서는 시각을 안 적는다 (사용자 확정) — 일반 RP 글도 마찬가지 */}
-                        {!imsg && <div style={{ fontSize: 9, color: 'var(--faint)', marginTop: 3 }}>{fmtHM(m.date)}</div>}
+                        {/* 시각은 어디에도 안 적는다 (v2.1 사용자 요청 — 대본 방에 남아 있던 HH:MM 줄도 뺐다). 순서는 date가 정한다 */}
                       </div>
                       {acts}
                     </div>

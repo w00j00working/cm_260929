@@ -132,6 +132,7 @@ export const COLLECTION_OF: Record<string, string> = {
   'ohome.pushsubs.v1': 'push_subs',
   // 스케줄러 일정 (v2.1) — 회원도 등록하게 설정(ohome.sched.v1)이 아니라 자기 행으로 (카테고리·회원 허용 옵션은 설정에 그대로)
   'ohome.schedev.v1': 'sched_events',
+  'ohome.treview.v1': 'trpg_reviews',   // TRPG 리뷰 (v2.1)
 };
 
 export const CONTENT_COLLECTIONS = Object.values(COLLECTION_OF);

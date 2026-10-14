@@ -49,6 +49,11 @@ export interface BoardSettings {
   /** 로드비 말머리 (v2.1 사용자 요청 — 말머리별로 모아보기). 정한 적 없으면 비어 있다 — 탭에 ALL만 보인다 */
   roadCats?: BoardBadge[];
   secRoadCats?: Record<string, BoardBadge[]>;
+  /** TRPG 리뷰 말머리 — 페어(누구와 했는지)별 (v2.1). 게시판(섹션)마다 따로 */
+  reviewCats?: BoardBadge[];
+  secReviewCats?: Record<string, BoardBadge[]>;
+  /** TRPG 리뷰 별점 이름 (v2.1) — 둘이 따로 매길 때 각 별점 앞에 붙는 이름 (예: 푸딩 / 곰주) */
+  reviewStars?: { a?: string; b?: string };
   /** 한 페이지에 보일 글 수 (v2.1 사용자 요청) — 갤러리 보기 / 갤러리 리스트 보기 / 큰 그림 / 로드비. 비우면 기본값 */
   perPage?: { gallery?: number; galleryList?: number; feed?: number; road?: number };
 }
@@ -86,6 +91,15 @@ export const roadCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
   (secId === MAIN_SEC ? (s.roadCats ?? []) : s.secRoadCats?.[secId] ?? s.roadCats ?? []);
 const roadCatsPatch = (s: BoardSettings, secId: string, cats: BoardBadge[]): Partial<BoardSettings> =>
   (secId === MAIN_SEC ? { roadCats: cats } : { secRoadCats: { ...s.secRoadCats, [secId]: cats } });
+
+/** 그 TRPG 리뷰 게시판에서 쓸 말머리 (v2.1) — 따로 정한 적이 없으면 기본 게시판 것, 그것도 없으면 없음 */
+export const reviewCatsOf = (s: BoardSettings, secId: string): BoardBadge[] =>
+  (secId === MAIN_SEC ? (s.reviewCats ?? []) : s.secReviewCats?.[secId] ?? s.reviewCats ?? []);
+const reviewCatsPatch = (s: BoardSettings, secId: string, cats: BoardBadge[]): Partial<BoardSettings> =>
+  (secId === MAIN_SEC ? { reviewCats: cats } : { secReviewCats: { ...s.secReviewCats, [secId]: cats } });
+/** TRPG 리뷰 별점 이름 — 비우면 「별점」·「별점 2」 */
+export const reviewStarsOf = (s: BoardSettings): { a: string; b: string } =>
+  ({ a: s.reviewStars?.a?.trim() || '별점', b: s.reviewStars?.b?.trim() || '별점 2' });
 
 const NEW_CAT = (): BoardBadge => ({ id: newId(), label: '새 말머리', bg: '#eef0f2', border: '#d7dae0', fg: '#5d636d' });
 
@@ -162,10 +176,20 @@ export function useBoardSettings() {
   const removeRoadCat = useCallback((secId: string, id: string) =>
     mutRoadCats(secId, cs => cs.filter(b => b.id !== id)), [mutRoadCats]);
   const setRoadCats = useCallback((secId: string, cats: BoardBadge[]) => mutRoadCats(secId, () => cats), [mutRoadCats]);
+  const mutReviewCats = useCallback((secId: string, fn: (cats: BoardBadge[]) => BoardBadge[]) =>
+    apply(s => ({ ...s, ...reviewCatsPatch(s, secId, fn(reviewCatsOf(s, secId))) })), [apply]);
+  const patchReviewCat = useCallback((secId: string, id: string, p: Partial<BoardBadge>) =>
+    mutReviewCats(secId, cs => cs.map(b => (b.id === id ? { ...b, ...p } : b))), [mutReviewCats]);
+  const addReviewCat = useCallback((secId: string) => mutReviewCats(secId, cs => [...cs, NEW_CAT()]), [mutReviewCats]);
+  const removeReviewCat = useCallback((secId: string, id: string) =>
+    mutReviewCats(secId, cs => cs.filter(b => b.id !== id)), [mutReviewCats]);
+  const setReviewCats = useCallback((secId: string, cats: BoardBadge[]) => mutReviewCats(secId, () => cats), [mutReviewCats]);
+  const setReviewStars = useCallback((p: { a?: string; b?: string }) =>
+    apply(s => ({ ...s, reviewStars: { ...s.reviewStars, ...p } })), [apply]);
   const setPerPage = useCallback((k: keyof typeof PER_PAGE_DEFAULT, v: number | undefined) =>
     apply(s => ({ ...s, perPage: { ...s.perPage, [k]: v } })), [apply]);
   return {
-    setPerPage,
+    setPerPage, patchReviewCat, addReviewCat, removeReviewCat, setReviewCats, setReviewStars,
     st, loaded, patchSystem, patchCat, addCat, removeCat, setCats, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
     patchFeedCat, addFeedCat, removeFeedCat, setFeedCats, setFeedHideAuthor,

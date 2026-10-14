@@ -17,7 +17,7 @@ import { DiaryPost, DIARY_SEED } from '@/lib/diaryStore';
 import { newId } from '@/lib/postStore';
 import {
   useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf, feedCatsOf, roadCatsOf, feedHideAuthorOf,
-  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref, perPageOf, PER_PAGE_DEFAULT,
+  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref, perPageOf, PER_PAGE_DEFAULT, reviewCatsOf,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
 import { useTrpgSettings, dotoriStatusKeys, dotoriBadgeOn, dotoriHiddenInAll, DotoriStatus, dotoriBadgeStyle } from '@/lib/galleryStore';
@@ -655,7 +655,7 @@ function BoardPane() {
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
     patchFeedCat, addFeedCat, removeFeedCat, setFeedCats, setFeedHideAuthor,
     patchRoadCat, addRoadCat, removeRoadCat, setRoadCats,
-  setPerPage,
+  setPerPage, patchReviewCat, addReviewCat, removeReviewCat, setReviewCats, setReviewStars,
   } = useBoardSettings();
   const { boards, setBoards, patchBoard } = useBoards();
   const [catBoard, setCatBoard] = useState(MAIN_BOARD_ID);   // 말머리 편집 대상 게시판
@@ -673,6 +673,9 @@ function BoardPane() {
   const roadSecs = secList('roadview');
   const [roadSecSel, setRoadSec] = useState(MAIN_SEC);
   const roadSec = roadSecs.some(s2 => s2.id === roadSecSel) ? roadSecSel : MAIN_SEC;
+  const reviewSecs = secList('treview');
+  const [reviewSecSel, setReviewSec] = useState(MAIN_SEC);
+  const reviewSec = reviewSecs.some(s2 => s2.id === reviewSecSel) ? reviewSecSel : MAIN_SEC;
   const del = useConfirmDelete();
 
   const sel = boards.find(b => b.id === catBoard) ?? boards[0];
@@ -855,6 +858,20 @@ function BoardPane() {
           secs: roadSecs, sec: roadSec, setSec: setRoadSec, cats: roadCatsOf(st, roadSec),
           set: setRoadCats, patch: patchRoadCat, add: addRoadCat, remove: removeRoadCat,
           extra: null as React.ReactNode,
+        },
+        {
+          // TRPG 리뷰 (v2.1 사용자 요청) — 페어별 말머리 + 둘이 따로 매기는 별점의 이름
+          title: 'TRPG 리뷰 말머리 (페어)', desc: 'TRPG 리뷰를 쓸 때 고르는 말머리 — 누구와 했는지(페어)별로 모아 봅니다 · 하나도 없으면 말머리 없이 씁니다',
+          secs: reviewSecs, sec: reviewSec, setSec: setReviewSec, cats: reviewCatsOf(st, reviewSec),
+          set: setReviewCats, patch: patchReviewCat, add: addReviewCat, remove: removeReviewCat,
+          extra: (
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="cp-lb">별점 이름</span>
+              <KInput value={st.reviewStars?.a ?? ''} placeholder="별점 1 (예: 푸딩)" onChange={e => setReviewStars({ a: e.target.value })} style={{ width: 150 }} />
+              <KInput value={st.reviewStars?.b ?? ''} placeholder="별점 2 (예: 곰주)" onChange={e => setReviewStars({ b: e.target.value })} style={{ width: 150 }} />
+              <small className="hint" style={{ margin: 0 }}>둘이 따로 매길 때 각 별점 앞에 붙는 이름</small>
+            </div>
+          ),
         },
       ]).map(blk => (
         <React.Fragment key={blk.title}>
@@ -2417,7 +2434,7 @@ function MenuPane() {
       if (!sec) return null;
       secId = sec.id;
     }
-    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/pchars', '/tchars', '/dotori', '/playlog', '/trpg'].includes(path)
+    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/pchars', '/tchars', '/dotori', '/playlog', '/trpg', '/treview'].includes(path)
       // 추가 로드비 — 기본 페이지의 공통값(roadUpload)을 따르되 따로 정할 수 있다 (기본 페이지는 아래 /loadb 가지에서)
       || (path === '/loadb' && secId !== MAIN_SEC);
     if (!inWritePerm) return null;

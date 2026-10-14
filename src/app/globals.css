@@ -1651,6 +1651,24 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
 .tagin-list button{text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:6px;font-size:calc(12.5px*var(--fs,1));color:var(--ink);cursor:var(--cur-pointer,pointer)}
 .tagin-list button:hover,.tagin-list button.on{background:color-mix(in srgb,var(--accent) 9%,#fff);color:var(--accent)}
 
+/* ---------- TRPG 리뷰 (v2.1 사용자 요청) — 별점 + 한줄 평 목록 ---------- */
+.rv-list{display:grid;gap:10px}
+.rv-row{padding:14px 18px;cursor:var(--cur-pointer,pointer);transition:.15s;display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center}
+.rv-row:hover{transform:translateY(-2px)}
+.rv-row .hd{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.rv-row .hd b{font-size:calc(14.5px*var(--fs,1));min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv-row .meta{font-size:calc(11px*var(--fs,1));color:var(--sub)}
+.rv-row .ex{grid-column:1/-1;font-size:calc(12.5px*var(--fs,1));color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv-stars{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.rv-stars .s{display:inline-flex;align-items:center;gap:5px;font-size:calc(11px*var(--fs,1));color:var(--sub);white-space:nowrap}
+.rv-stars .s i{font-style:normal;color:#e0a92f;letter-spacing:.06em;font-size:calc(13.5px*var(--fs,1))}
+.rv-pick{display:inline-flex;gap:2px}
+.rv-pick button{font-size:22px;line-height:1;color:#d7dae0;padding:0 1px;background:transparent;border:0;cursor:var(--cur-pointer,pointer);transition:.12s}
+.rv-pick button.on{color:#e0a92f}
+.rv-pick button:disabled{cursor:default}
+.rv-detail .rv-stars{justify-content:flex-start;margin:10px 0 16px}
+@media (max-width:620px){.rv-row{grid-template-columns:1fr}.rv-stars{justify-content:flex-start}}
+
 /* ---------- 게시판 공통 (4.2) ---------- */
 .toolrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap}
 /* 줄바꿈으로 검색·버튼 묶음이 아랫줄로 내려가도 오른쪽 정렬 유지 (v1.9 사용자 요청) */

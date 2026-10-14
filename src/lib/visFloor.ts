@@ -28,6 +28,7 @@ const AREA: Record<string, { kind?: SectionKind; href?: string; board?: boolean 
   dotori: { kind: 'dotori' },
   playlog: { kind: 'playlog' },
   sched_events: { kind: 'sched' },   // 스케줄러 일정 (v2.1) — 메뉴가 비공개면 일정도
+  trpg_reviews: { kind: 'treview' },   // TRPG 리뷰 (v2.1)
   diary: { kind: 'diary' },
   threads: { kind: 'threads' },
   guestbook: { href: '/guest' },

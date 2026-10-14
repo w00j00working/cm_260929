@@ -41,6 +41,7 @@ export const RESET_CONTENT: ResetGroup[] = [
   { key: 'tchars', label: 'TRPG 캐릭터', keys: ['ohome.tchars.v1'] },
   { key: 'dotori', label: '도토리', keys: ['ohome.dotori.v1'] },
   { key: 'playlog', label: '플레이기록', keys: ['ohome.playlog.v1'] },
+  { key: 'treview', label: 'TRPG 리뷰', keys: ['ohome.treview.v1'] },   // v2.1
   { key: 'rp', label: '역극', keys: ['ohome.rp.v1'] },
   { key: 'threads', label: '감상타래', keys: ['ohome.threads.v1'] },
   { key: 'diary', label: '다이어리', keys: ['ohome.diary.v1'] },

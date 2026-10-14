@@ -22,6 +22,7 @@ export const FEATURES: { href: string; label: string }[] = [
   { href: '/trpg', label: '로그 백업' },
   { href: '/dotori', label: '도토리' },
   { href: '/playlog', label: '플레이기록' },
+  { href: '/treview', label: 'TRPG 리뷰' },   // TRPG 리뷰 (v2.1)
   { href: '/cal', label: '스케줄러' },
   { href: '/diary', label: '다이어리' },
   { href: '/threads', label: '감상타래' },
@@ -56,6 +57,7 @@ export const DEFAULT_MENU: MenuItem[] = [
       { label: '로그 백업', href: '/trpg' },
       { label: '도토리', href: '/dotori' },
       { label: '플레이기록', href: '/playlog' },
+      { label: 'TRPG 리뷰', href: '/treview' },
     ],
   },
   {

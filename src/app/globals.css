@@ -192,6 +192,8 @@ a{color:inherit;text-decoration:none}
 .bgm.folded{padding:6px;gap:0;cursor:var(--cur-pointer,pointer)}
 .bgm.folded .title,.bgm.folded .ctrl,.bgm.folded .vol,.bgm.folded .fold-btn,.bgm.folded .bgm-list{display:none}
 .bgm-list{position:absolute;bottom:calc(100% + 10px);right:0;min-width:200px;background:var(--bgm-bg);border:1px solid var(--line-dark);border-radius:14px;padding:8px;display:none;box-shadow:var(--sh-dd)}
+/* 왼쪽 아래 배치 (PC — 모바일에선 아래 미디어 규칙이 화면 전폭 바로 덮는다). 예전엔 BgmPlayer가 글자로 박아 모바일까지 따라왔다 */
+.bgm.bgm-left{right:auto;left:20px}
 /* 왼쪽 배치일 때 목록 팝업도 왼쪽 기준으로 — 화면 밖으로 밀리지 않게 */
 .bgm.bgm-left .bgm-list{right:auto;left:0}
 /* 모바일 메뉴 버튼 (v2.1 사용자 요청) — 오른쪽 아래 「≡」. BGM 바가 있으면 바 높이(--bgm-h) 가운데에, 없으면 바닥에서 조금 띄워 */
@@ -1951,7 +1953,14 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
   .rel-body{grid-template-columns:1fr;max-width:560px;margin-left:auto;margin-right:auto}
   .rel-center{order:-1}
   .rel-hero h1{font-size:calc(44px*var(--fs,1))}
-  .rel-hero .quote{position:static;display:block;margin-top:4px}
+  /* 두 사람 한마디 — 좁은 화면에서는 자관명·캐치프레이즈 아래에 (루넬갠홈에서 이식 — 위아래로 떨어져 나왔다).
+     히어로를 줄바꿈 플렉스로 두고 다른 줄은 가로 전체, 한마디는 맨 뒤(order)에 두 줄로:
+     왼쪽 캐릭터 한마디는 왼쪽 정렬 한 줄, 오른쪽 캐릭터 한마디는 오른쪽 정렬 한 줄 */
+  .rel-hero{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+  .rel-hero > *{flex:0 0 100%}
+  .rel-hero .quote{position:static;display:block;flex:0 0 100%;min-width:0;margin-top:8px;padding:0 6px;overflow-wrap:anywhere}
+  .rel-hero .quote.l{order:10;text-align:left}
+  .rel-hero .quote.r{order:11;text-align:right;margin-top:4px}
   .qa-wrap{grid-template-columns:1fr;height:auto}
   .qa-list{border-left:none;padding-left:0;max-height:300px}
 }
@@ -1997,6 +2006,8 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
      (v2.1 사용자 요청: "여백이 많으니 메뉴 버튼이랑 연결된 UI처럼 한 줄로") — 바 높이를 36px로 맞춰 버튼과 같은 줄이 된다 */
   .bgm,.bgm.bgm-left,.bgm.folded{padding:4px 42px 4px 12px;min-height:36px;box-sizing:border-box}
   .bgm .ctrl button{width:24px;height:24px}
+  /* 역극 — BGM 바가 없어도 오른쪽 아래 메뉴 칸(.mmenu-btn, 36px)이 입력줄의 ↑ 버튼을 가리지 않게 (BGM 바가 있으면 그 높이, 루넬갠홈에서 이식) */
+  .page.page-rp{padding-bottom:calc(14px + max(var(--bgm-h,0px),36px))}
 
   /* 캐릭터 리스트 — 모바일 1열 3개 (v1.9 사용자 확정) */
   .chars-grid{grid-template-columns:repeat(3,1fr);gap:10px}

@@ -268,8 +268,10 @@ export function BgmPlayer() {
   return (
     <div
       ref={rootRef}
+      /* 왼쪽 아래 위치는 CSS(.bgm-left)가 맡는다 (루넬갠홈에서 이식). 예전에는 여기서 left:20px를 글자로 박아 넣어서
+         모바일에서도 바가 화면 폭을 다 쓰지 못했다 — 왼쪽이 20px 뜨고, 오른쪽 메뉴 칸과 떨어지고, 바닥에 붙은 바로 잡히지 않아
+         아래 여백(--bgm-h)이 0이 되어 페이지 끝이 바에 가렸다 (v2.1 사용자 제보 — 루넬처럼 하단에 붙고 아래 공간이 여유 있게) */
       className={`bgm ${folded ? 'folded' : ''} ${settings.position === 'bl' ? 'bgm-left' : ''}`}
-      style={settings.position === 'bl' ? { right: 'auto', left: 20 } : undefined}
       onClick={() => { if (folded) setFold(false); }}
       data-tip={folded ? '펼치기' : undefined}
     >

@@ -30,6 +30,8 @@ export interface ThemeVars {
   pageHeadM?: 'same' | 'none';
   // BGM 플레이어
   bgmBg: string; bgmFg: string; bgmIc: string; bgmVol: string;
+  /** 재생 중인 곡 글씨색 (v2.1 사용자 문의) — 비우면 포인트 컬러에서 밝게 파생한 색(--accent-soft) */
+  bgmOn?: string;
   // 스크롤바: 색 · 테두리색
   sbThumb: string; sbBd: string;
   // 검색창 (6.4 공통 검색): 배경 · 글씨 · 아이콘/플레이스홀더 · 테두리
@@ -53,7 +55,8 @@ export interface ThemeVars {
   // 입력 포커스 (v1.9 사용자 요청) — 인풋·텍스트에리어·드롭다운·에디터 공통
   // focusColor: 테두리·링 색 / focusRing: 링 방식(은은한 글로우 · 선명한 라인 · 없음) / focusW: 링 두께 px
   focusColor?: string; focusRing?: 'glow' | 'line' | 'none'; focusW?: number;
-  // 포인트 컬러
+  // 포인트 컬러 — accentSoft(연한 포인트)는 저장값을 쓰지 않고 늘 accent에서 파생한다 (v2.1 사용자 제보: 세부 모드에서 포인트만
+  // 바꾸면 옛 파생값이 남아 「적용한 적 없는 색」이 호버·BGM 재생 곡에 나왔다). 필드는 옛 저장 데이터와 맞추려고 남겨 둔다
   accent: string; accentSoft: string;
   // 모서리 둥글기(px)
   radius: number; radiusS: number;
@@ -109,6 +112,10 @@ export const LIGHT_THEME: ThemeVars = {
   radius: 14, radiusS: 9, shadow: 30, ddShadow: 30, // 밝은 배경에선 그림자를 약하게 (사용자 확정 30%)
 };
 
+/** 연한 포인트색 — 포인트 컬러에서 밝고 살짝 흐리게 (호버·BGM 재생 곡·드롭존 등). 모든 모드에서 이 공식 하나로 (v2.1) */
+export const softAccentOf = (accent: string): string =>
+  adjust(accent, cc => ({ l: Math.min(0.75, cc.l + 0.18), s: cc.s * 0.8 }));
+
 /**
  * 포인트 자동 모드 (v1.8 확정) — 포인트 컬러 하나로 전체 팔레트 파생.
  * 톤(다크/라이트) 선택 가능, 파생값은 세부 항목 hex 란에 전부 채워짐 (v1.9).
@@ -116,7 +123,7 @@ export const LIGHT_THEME: ThemeVars = {
 export function derivePointTheme(accent: string, tone: PointTone): ThemeVars {
   const { h, s } = hexToHsl(accent);
   const c = (sat: number, lig: number) => hslToHex({ h, s: Math.min(1, s * sat), l: lig });
-  const accentSoft = adjust(accent, cc => ({ l: Math.min(0.75, cc.l + 0.18), s: cc.s * 0.8 }));
+  const accentSoft = softAccentOf(accent);
 
   if (tone === 'dark') {
     return {
@@ -240,10 +247,11 @@ export function themeToCssVars(t: ThemeVars): Record<string, string> {
     '--ph-desc-m': (t.pageHeadM ?? 'same') === 'none' ? 'none'
       : ((t.pageHead ?? 'both') === 'both' || t.pageHead === 'desc' ? 'block' : 'none'),
     '--bgm-bg': withAlpha(t.bgmBg, 0.9), '--bgm-fg': t.bgmFg, '--bgm-ic': t.bgmIc, '--bgm-vol': t.bgmVol,
+    '--bgm-on': t.bgmOn ?? softAccentOf(t.accent),   // 재생 중 곡 (v2.1) — 비우면 연한 포인트색
     '--sb-thumb': t.sbThumb, '--sb-bd': t.sbBd,
     '--search-bg': t.searchBg ?? '#232830', '--search-fg': t.searchFg ?? '#e8eaee',
     '--search-ic': t.searchIc ?? '#8b919b', '--search-bd': t.searchBd ?? '#3a404a',
-    '--accent': t.accent, '--accent-soft': t.accentSoft,
+    '--accent': t.accent, '--accent-soft': softAccentOf(t.accent),   // 저장된 accentSoft는 쓰지 않는다 (v2.1 — 위 ThemeVars 주석)
     // 진한 버튼 3색 — 호버 미지정 시 배경에서 살짝 밝게 자동 파생
     '--btn-dark': t.btnDark ?? '#1d2025',
     '--btn-dark-fg': t.btnDarkFg ?? '#ffffff',

@@ -6,7 +6,7 @@ import { useAuth, inviteCode, setInviteCode } from '@/lib/auth';
 import { PushAdminRow } from '@/components/shell/PushSettings';
 import { useMembers } from '@/lib/members';
 import { useTheme } from '@/lib/ThemeProvider';
-import { ThemeVars } from '@/lib/theme';
+import { ThemeVars, softAccentOf } from '@/lib/theme';
 import { ColorField } from '@/components/ui/ColorField';
 import { KStep, KToggle, KInput, LiveInput, KTextarea, KSelect, KCheck, Pager } from '@/components/ui/Kit';
 import { DragList } from '@/components/ui/DragList';
@@ -381,12 +381,13 @@ function DesignPane() {
       </div>
 
       <div className="set-row">
-        <div className="l"><b>BGM 플레이어</b></div>
+        <div className="l"><b>BGM 플레이어</b><small>재생 중 — 곡 목록에서 지금 나오는 곡의 글씨색 (비우면 포인트 컬러에서 밝게 파생)</small></div>
         <div className="cp-group">
           <CP label="배경" k="bgmBg" />
           <CP label="글씨" k="bgmFg" />
           <CP label="아이콘" k="bgmIc" />
           <CP label="볼륨바" k="bgmVol" />
+          <CP label="재생 중" k="bgmOn" def={softAccentOf(state.vars.accent)} />
         </div>
       </div>
 
@@ -475,7 +476,7 @@ function DesignPane() {
       <WidgetStyleRow />
 
       <div className="set-row">
-        <div className="l"><b>진한 버튼</b><small>등록·저장 버튼과 체크박스·선택 필터 칩 공통</small></div>
+        <div className="l"><b>진한 버튼</b><small>등록·저장·작성 완료(POST/SAVE)·삭제 버튼과 체크박스·선택 필터 칩 공통 — 호버까지 이 3색</small></div>
         <div className="cp-group">
           <CP label="버튼" k="btnDark" />
           <CP label="글씨" k="btnDarkFg" />

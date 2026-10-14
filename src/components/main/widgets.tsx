@@ -63,7 +63,7 @@ export function BannerWidget({ conf }: { conf: WidgetConf }) {
   };
 
   return (
-    <div className="banner" style={{ cursor: s.link && !editOn ? 'pointer' : undefined }} onClick={go}>
+    <div className={`banner ${conf.settings.noBorder ? 'no-bd' : ''}`} style={{ cursor: s.link && !editOn ? 'pointer' : undefined }} onClick={go}>
       {slides.map((sl, i) => (
         <div key={sl.id} className={`slide ${i === Math.min(cur, slides.length - 1) ? 'on' : ''}`}>
           {sl.imgId
@@ -511,7 +511,7 @@ export function DecoWidget({ conf }: { conf: WidgetConf }) {
   const hPx = conf.settings.hPx as number | undefined;
   const canGo = !editOn && !!cur?.link;
   return (
-    <div className="deco-wgt"
+    <div className={`deco-wgt ${conf.settings.noBorder ? 'no-bd' : ''}`}
       style={{
         position: 'relative', overflow: 'hidden',
         width: wPx ? `${wPx}px` : '100%', maxWidth: '100%',

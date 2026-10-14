@@ -22,8 +22,6 @@ export const FEATURES: { href: string; label: string }[] = [
   { href: '/trpg', label: '로그 백업' },
   { href: '/dotori', label: '도토리' },
   { href: '/playlog', label: '플레이기록' },
-  { href: '/comm', label: '커미션' },
-  { href: '/comm-apply', label: '신청자 리스트' },
   { href: '/cal', label: '스케줄러' },
   { href: '/diary', label: '다이어리' },
   { href: '/threads', label: '감상타래' },
@@ -58,13 +56,6 @@ export const DEFAULT_MENU: MenuItem[] = [
       { label: '로그 백업', href: '/trpg' },
       { label: '도토리', href: '/dotori' },
       { label: '플레이기록', href: '/playlog' },
-    ],
-  },
-  {
-    label: '커미션',
-    children: [
-      { label: '커미션', href: '/comm' },
-      { label: '신청자 리스트', href: '/comm-apply' },
     ],
   },
   {

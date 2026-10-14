@@ -112,8 +112,6 @@ export const COLLECTION_OF: Record<string, string> = {
   'ohome.threads.v1': 'threads',
   'ohome.diary.v1': 'diary',
   'ohome.memo.v1': 'memos',
-  'ohome.comm.v1': 'commissions',
-  'ohome.commapply.v1': 'applicants',
   'ohome.moods.v1': 'moods',
   // 댓글 — 글 안이 아니라 자기 문서로 (v2.0). 글 안에 두면 댓글을 달 때마다 글을 UPDATE 해야 해서
   // 「글 수정은 작성자·관리자만」 규칙에 걸려 일반 회원이 관리자 글에 댓글을 달 수 없었다
@@ -132,6 +130,8 @@ export const COLLECTION_OF: Record<string, string> = {
   'ohome.notif.v1': 'notifications',
   // 웹푸시 기기 구독 (루넬 이식) — 회원마다 기기별 한 문서, 공개범위 member (보내는 쪽이 받는 사람 구독을 읽어야 한다)
   'ohome.pushsubs.v1': 'push_subs',
+  // 스케줄러 일정 (v2.1) — 회원도 등록하게 설정(ohome.sched.v1)이 아니라 자기 행으로 (카테고리·회원 허용 옵션은 설정에 그대로)
+  'ohome.schedev.v1': 'sched_events',
 };
 
 export const CONTENT_COLLECTIONS = Object.values(COLLECTION_OF);

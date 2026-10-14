@@ -17,13 +17,10 @@ import { CroppedBlobImg, CropValue } from '@/components/ui/CropEditor';
 import { useLocalList } from '@/lib/postStore';
 import { RoadItem, ROAD_SEED, BackupPost, BACKUP_SEED } from '@/lib/galleryStore';
 import { DiaryPost, DIARY_SEED, Mood, MOOD_SEED, moodTint } from '@/lib/diaryStore';
-import { useSched, eventColor } from '@/lib/schedStore';
+import { useSched, eventColor, nextOccurrence, type SchedEvent } from '@/lib/schedStore';
 import { StickyMemo, MEMO_SEED, MEMO_SIZE_W, useMemoSettings } from '@/lib/memoStore';
 import { BlobImg, useBlobUrl } from '@/lib/blobStore';
 import { normalizeInternalLink } from '@/lib/link';
-import {
-  Applicant, APPLY_SEED, useCommSettings, badgeStyle, maskName, inTrash,
-} from '@/lib/commStore';
 
 /* 편집모드 우클릭 「설정」 → 해당 위젯의 설정 모달 열기 (v1.9 사용자 확정 — 이벤트로 연결) */
 function useEditEvent(id: string, onOpen: () => void) {
@@ -348,15 +345,8 @@ export function UpcomingWidget() {
   const upcoming = st.events
     .filter(e => seeSec(e.secId))
     .filter(e => isAdmin || e.visibility === 'public' || (e.visibility === 'member' && !!user))
-    .map(e => {
-      let d = e.start;
-      if (e.repeat === 'yearly') {
-        const thisYear = `${today.getFullYear()}-${e.start.slice(5)}`;
-        d = thisYear >= todayStr ? thisYear : `${today.getFullYear() + 1}-${e.start.slice(5)}`;
-      }
-      return { e, d };
-    })
-    .filter(x => x.d >= todayStr)
+    .map(e => ({ e, d: nextOccurrence(e, todayStr) }))   // 매년·매주 반복은 다음에 오는 날로 (v2.1)
+    .filter((x): x is { e: SchedEvent; d: string } => x.d !== null)
     .sort((a, b) => a.d.localeCompare(b.d))
     .slice(0, 3);
   if (!canSee) return null;   // 메뉴가 비공개면 위젯 자체를 띄우지 않는다 (v2.0)
@@ -583,76 +573,11 @@ export function MemoBoardWidget() {
   );
 }
 
-/* ---------- 커미션 신청자 (v2.0 사용자 요청) ----------
-   다가오는 마감이 빠른 순으로. 몇 명까지 볼지는 설정에서 (기본 5명).
-   이름은 신청자 리스트와 **같은 규칙**으로 가린다 — 관리자만 전체, 나머지는 앞 몇 글자만.
-   마감이 없는 신청은 「다가오는 마감」이 아니므로 넣지 않는다. 지난 마감도 뺀다. */
-export function ApplyWidget({ conf }: { conf: WidgetConf }) {
-  const router = useRouter();
-  const { user, isAdmin } = useAuth();
-  const { editOn, updateWidget } = useMainStore();
-  // 메뉴에서 비공개로 둔 신청자 리스트는 위젯에도 안 나온다 (v2.0)
-  const [menuSet] = useMenuSettings();
-  const [settings] = useCommSettings();
-  const [apps] = useLocalList<Applicant>('ohome.commapply.v1', APPLY_SEED);
-  const [open, setOpen] = useState(false);
-  useEditEvent(conf.id, () => setOpen(true));
-
-  const max = Math.max(1, Math.min(20, (conf.settings.count as number) ?? 5));
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const shown = apps
-    .filter(a => !inTrash(a) && !!a.deadline && a.deadline >= todayStr)
-    .sort((a, b) => (a.deadline ?? '').localeCompare(b.deadline ?? ''))
-    .slice(0, max);
-
-  /** 남은 날 — 오늘이면 D-DAY */
-  const dleft = (d: string) => {
-    const ms = Date.parse(`${d}T00:00:00`) - Date.parse(`${todayStr}T00:00:00`);
-    const n = Math.round(ms / 86400000);
-    return n === 0 ? 'D-DAY' : `D-${n}`;
-  };
-
-  // 훅을 모두 부른 뒤에 판정한다 — 중간에서 빠지면 렌더마다 훅 수가 달라진다
-  if (!canViewHref(menuSet, '/comm-apply', { loggedIn: !!user, isAdmin, id: user?.id })) return null;
-
-  return (
-    /* 누르면 관리자든 아니든 신청자 페이지로 간다 (v2.0 사용자 요청).
-       설정은 편집모드에서 우클릭 > 설정으로만 — 목록을 보러 눌렀는데 관리 창이 뜨면 안 된다 */
-    <div className="panel widget" style={{ cursor: 'var(--cur-pointer,pointer)' }}
-      onClick={e => {
-        if ((e.target as HTMLElement).closest('.modal-ov')) return;
-        if (editOn) return;   // 편집모드에서는 배치·우클릭 메뉴가 우선
-        router.push('/comm-apply');
-      }}>
-      <h4>COMMISSION <span className="more" onClick={e => { e.stopPropagation(); router.push('/comm-apply'); }}>전체 ›</span></h4>
-      {shown.map(a => {
-        const badge = settings.applyBadges.find(b => b.id === a.badgeId);
-        return (
-          <div className="apply-row" key={a.id}>
-            <b>{dleft(a.deadline!)}</b>
-            <span>{isAdmin ? a.name : maskName(a.name, a.nameOpen ?? 1)}</span>
-            {badge && <i style={badgeStyle(badge, settings.badgeShape)}>{badge.label}</i>}
-          </div>
-        );
-      })}
-      {shown.length === 0 && <p className="hint">다가오는 마감이 없습니다</p>}
-
-      <Modal open={open} onClose={() => setOpen(false)} small title="커미션 신청자 위젯"
-        desc="마감이 가까운 순으로 보여 줍니다 — 마감일이 없거나 지난 신청은 빼고 셉니다"
-        actions={<button className="btn btn-dark" onClick={() => setOpen(false)}>확인</button>}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span className="cp-lb">몇 명까지</span>
-          <KStep value={(conf.settings.count as number) ?? 5} min={1} max={20} suffix="명"
-            onChange={v => updateWidget(conf.id, { settings: { ...conf.settings, count: v } }, { persist: true })} />
-        </div>
-      </Modal>
-    </div>
-  );
-}
 
 /* ---------- 타입 → 렌더러 ---------- */
 export function renderWidget(conf: WidgetConf) {
+  // 없어진 종류(커미션 신청자 등)가 옛 배치에 남아 있으면 그리지 않는다 (v2.1 — 커미션 기능 삭제)
+  if (!(conf.type in WIDGET_META)) return null;
   switch (conf.type) {
     case 'banner': return <BannerWidget conf={conf} />;
     case 'menu': return <MenuListWidget />;
@@ -665,7 +590,6 @@ export function renderWidget(conf: WidgetConf) {
     case 'freetext': return <FreeTextWidget conf={conf} />;
     case 'deco': return <DecoWidget conf={conf} />;
     case 'memoboard': return <MemoBoardWidget />;
-    case 'apply': return <ApplyWidget conf={conf} />;
     default: return <div className="panel widget"><h4>{WIDGET_META[conf.type]?.title ?? conf.type}</h4></div>;
   }
 }

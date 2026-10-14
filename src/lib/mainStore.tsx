@@ -10,8 +10,7 @@ import { getRawSetting, setSetting } from './settingStore';
 export type WidgetType =
   | 'banner' | 'member'                 // 고정 요소 (삭제 불가)
   | 'menu' | 'memo' | 'diary' | 'latest'
-  | 'dday' | 'todo' | 'upcoming' | 'freetext' | 'deco' | 'memoboard'
-  | 'apply';   // 'image'는 deco(장식 이미지+링크)로 일원화 (v1.9) · apply = 커미션 신청자 (v2.0)
+  | 'dday' | 'todo' | 'upcoming' | 'freetext' | 'deco' | 'memoboard';   // 'image'는 deco(장식 이미지+링크)로 일원화 (v1.9) · 커미션 신청자(apply)는 v2.1에서 기능째 삭제
 
 export interface WidgetConf {
   id: string;
@@ -53,7 +52,6 @@ export const WIDGET_META: Record<WidgetType, { title: string; desc: string }> = 
   freetext: { title: '자유 텍스트', desc: '패널 없이 문구만' },
   deco: { title: '이미지', desc: '패널 없이 이미지만' },
   memoboard: { title: 'STICKY', desc: '스티커 메모 미니보드 — 클릭 시 메모장 (4.6)' },
-  apply: { title: 'COMMISSION', desc: '커미션 신청자 — 마감 빠른 순 (몇 명까지 볼지 설정)' },
 };
 
 /** 같은 종류를 여러 개 추가할 수 있는 위젯 (v1.9 사용자 확정 — 나머지는 하나만) */
@@ -92,8 +90,8 @@ const STORAGE_KEY = 'ohome.main.v1';
 /** 편집모드를 지원하는 페이지 (v1.9 — 카드 그리드 드래그 정렬 포함)
  *  /trpg 로그 백업이 빠져 있던 것은 실수 — 드래그 정렬·목록 숨김 확인 모두 이 토글이 있어야 켜진다
  *  (v2.0 사용자 발견 — 목록 숨김 기능을 만들다 보니 편집모드 자체가 이 페이지에서 켜지지 않는 걸 발견) */
-const EDIT_PAGES = ['/', '/comm-apply', '/chars', '/pchars', '/rels', '/comm', '/gallery', '/dotori', '/tchars', '/playlog', '/trpg'];   // /pchars: 상대 캐릭터 리스트 (v2.1 사용자 제보)
-const EDIT_PAGE_NAMES = '메인 · 신청자 리스트 · 캐릭터 · 상대 캐릭터 · 자관 · 커미션 · 갤러리 · 도토리 · TRPG 캐릭터 · 플레이기록 · TRPG 로그';
+const EDIT_PAGES = ['/', '/chars', '/pchars', '/rels', '/gallery', '/dotori', '/tchars', '/playlog', '/trpg'];   // /pchars: 상대 캐릭터 리스트 (v2.1 사용자 제보)
+const EDIT_PAGE_NAMES = '메인 · 캐릭터 · 상대 캐릭터 · 자관 · 갤러리 · 도토리 · TRPG 캐릭터 · 플레이기록 · TRPG 로그';
 
 interface MainCtx {
   state: MainState;

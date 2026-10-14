@@ -113,15 +113,14 @@ declare content_tables text[] := array[
   'threads',      -- 감상타래
   'diary',        -- 다이어리
   'memos',        -- 스티커 메모
-  'commissions',  -- 커미션
-  'applicants',   -- 신청자
   'moods',        -- 무드 목록
   'comments',     -- 댓글 (v2.0 — 글 안이 아니라 자기 행으로. 글을 수정하지 않고 댓글을 달 수 있게)
   'qa_answers',   -- 자관 문답 답변 (v2.0 — 같은 이유로 자관 안이 아니라 자기 행으로)
   'rp_messages',  -- 역극 발화 (v2.0 — 같은 이유로 방 안이 아니라 자기 행으로)
   'rp_typing',    -- 역극 입력 중 표시 (v2.1 — 방·사람당 한 행, 몇 초마다 갱신되는 임시 데이터)
   'notifications', -- 알림 (v2.0 — 기기 보관이던 것을 서버로: 받은 사람 계정으로 어느 기기에서나)
-  'push_subs'      -- 웹푸시 기기 구독 (v2.1 — 회원끼리 읽힌다: 보내는 쪽이 받는 사람 구독을 읽어야. 서버 개인키 없이는 못 보낸다)
+  'push_subs',     -- 웹푸시 기기 구독 (v2.1 — 회원끼리 읽힌다: 보내는 쪽이 받는 사람 구독을 읽어야. 서버 개인키 없이는 못 보낸다)
+  'sched_events'   -- 스케줄러 일정 (v2.1 — 회원도 등록하게 설정이 아니라 자기 행으로)
 ];
 begin
   foreach t in array content_tables loop

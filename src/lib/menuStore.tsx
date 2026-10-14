@@ -50,11 +50,10 @@ export interface MenuSettings {
 }
 
 /** 이미지 저장 방지 영역 (v1.9) — 게시판은 갤러리·로드비 포함 */
-export type ImgProtectArea = 'board' | 'comm' | 'tchar' | 'chars' | 'rels';
+export type ImgProtectArea = 'board' | 'tchar' | 'chars' | 'rels';   // comm(커미션)은 v2.1에서 기능째 삭제
 
 export const IMG_PROTECT_AREAS: { key: ImgProtectArea; label: string; paths: string[] }[] = [
   { key: 'board', label: '게시판 (갤러리·큰 그림·로드비 포함)', paths: ['/board', '/gallery', '/feed', '/loadb'] },
-  { key: 'comm', label: '커미션', paths: ['/comm', '/comm-apply'] },
   { key: 'tchar', label: 'TRPG 캐릭터', paths: ['/tchars'] },
   { key: 'chars', label: '자캐 (캐릭터·상대 캐릭터)', paths: ['/chars', '/pchars'] },
   { key: 'rels', label: '자관', paths: ['/rels'] },

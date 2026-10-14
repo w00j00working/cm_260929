@@ -4,10 +4,10 @@
 import React, { Suspense, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useMainStore } from '@/lib/mainStore';
-import { useSched, SchedEvent, eventColor, eventOnDate } from '@/lib/schedStore';
+import { useSched, SchedEvent, eventColor, eventOnDate, nextOccurrence, canEditEvent } from '@/lib/schedStore';
 import { DdayWidget, TodoWidget } from '@/components/main/widgets';
 import { Modal, useConfirmDelete } from '@/components/ui/Modal';
-import { KInput, KTextarea, KSelect, KCheck, KDate, KToggle } from '@/components/ui/Kit';
+import { KInput, KTextarea, KSelect, KCheck, KDate, KToggle, KStep } from '@/components/ui/Kit';
 import { ColorField } from '@/components/ui/ColorField';
 import { DragList } from '@/components/ui/DragList';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
@@ -41,12 +41,15 @@ function CalInner() {
   const [evId, setEvId] = useState<string | null>(null);   // null = 신규
   const [f, setF] = useState({
     title: '', start: '', end: '', catId: '', color: '', useCatColor: true,
-    memo: '', visibility: 'public' as SchedEvent['visibility'], yearly: false,
+    memo: '', visibility: 'public' as SchedEvent['visibility'],
+    repeat: 'none' as SchedEvent['repeat'], repeatCount: 0, repeatUntil: '',   // 반복 (v2.1 — 매주 추가)
   });
 
   if (!loaded) return <section className="page" />;
 
   const canWrite = isAdmin || (st.allowMember && !!user);
+  // 고치기·지우기는 등록한 본인과 관리자 (v2.1 — 회원도 등록하게 되면서)
+  const canEdit = (e: SchedEvent) => canWrite && canEditEvent(e, isAdmin, user?.id);
   const canSee = (e: SchedEvent) =>
     isAdmin || e.visibility === 'public' || (e.visibility === 'member' && !!user);
 
@@ -73,16 +76,16 @@ function CalInner() {
   const openNew = (date: string) => {
     if (!canWrite) return;
     setEvId(null);
-    setF({ title: '', start: date, end: '', catId: st.cats[0]?.id ?? '', color: '', useCatColor: true, memo: '', visibility: 'public', yearly: false });
+    setF({ title: '', start: date, end: '', catId: st.cats[0]?.id ?? '', color: '', useCatColor: true, memo: '', visibility: 'public', repeat: 'none', repeatCount: 0, repeatUntil: '' });
     setEvOpen(true);
   };
   const openEdit = (e: SchedEvent) => {
-    if (!canWrite) return;
+    if (!canEdit(e)) return;
     setEvId(e.id);
     setF({
       title: e.title, start: e.start, end: e.end ?? '', catId: e.catId,
       color: e.color ?? '', useCatColor: !e.color, memo: e.memo ?? '',
-      visibility: e.visibility, yearly: e.repeat === 'yearly',
+      visibility: e.visibility, repeat: e.repeat ?? 'none', repeatCount: e.repeatCount ?? 0, repeatUntil: e.repeatUntil ?? '',
     });
     setEvOpen(true);
   };
@@ -93,7 +96,9 @@ function CalInner() {
       title: f.title.trim(), start: f.start, end: f.end || undefined,
       catId: f.catId, color: f.useCatColor ? undefined : f.color || undefined,
       memo: f.memo.trim() || undefined, visibility: f.visibility,
-      repeat: (f.yearly ? 'yearly' : 'none') as SchedEvent['repeat'],
+      repeat: f.repeat,
+      repeatCount: f.repeat === 'weekly' && f.repeatCount > 0 ? f.repeatCount : undefined,
+      repeatUntil: f.repeat === 'weekly' && /^\d{4}-\d{2}-\d{2}$/.test(f.repeatUntil) ? f.repeatUntil : undefined,
     };
     if (evId) updateEvent(evId, ev); else addEvent(ev);
     setEvOpen(false);
@@ -125,15 +130,8 @@ function CalInner() {
             const today = fmt(now.getFullYear(), now.getMonth(), now.getDate());
             const list = st.events
               .filter(canSee)
-              .map(e => {
-                let d = e.start;
-                if (e.repeat === 'yearly') {
-                  const thisYear = `${now.getFullYear()}-${e.start.slice(5)}`;
-                  d = thisYear >= today ? thisYear : `${now.getFullYear() + 1}-${e.start.slice(5)}`;
-                }
-                return { e, d };
-              })
-              .filter(x => x.d >= today || (x.e.end && x.e.end >= today))
+              .map(e => ({ e, d: nextOccurrence(e, today) }))   // 매년·매주 반복은 다음에 오는 날로 (v2.1)
+              .filter((x): x is { e: SchedEvent; d: string } => x.d !== null)
               .sort((a, b) => a.d.localeCompare(b.d))
               .slice(0, 10);
             return (
@@ -197,7 +195,7 @@ function CalInner() {
               {canWrite && <span className="more" onClick={() => openNew(picked)}>＋ 추가</span>}
             </h4>
             {pickedEvents.length > 0 ? (
-              <DragList items={pickedEvents} keyOf={e => e.id} disabled={!canWrite}
+              <DragList items={pickedEvents} keyOf={e => e.id} disabled={!isAdmin}   /* 순서는 목록 공통이라 관리자만 (v2.1) */
                 onReorder={next => reorderOn(next.map(e => e.id))}
                 render={e => (
                   /* 제목은 왼쪽, 카테고리 색은 맨 오른쪽.
@@ -207,7 +205,7 @@ function CalInner() {
                     <span style={{
                       flex: 1, minWidth: 0, textAlign: 'left',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      cursor: canWrite ? 'var(--cur-pointer,pointer)' : undefined,
+                      cursor: canEdit(e) ? 'var(--cur-pointer,pointer)' : undefined,
                     }} onClick={() => openEdit(e)}>{e.title}</span>
                     <i style={{
                       width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
@@ -267,7 +265,21 @@ function CalInner() {
                 { value: 'member', label: '멤버공개' },
                 { value: 'private', label: '나만보기' },
               ]} />
-            <KCheck label="매년 반복" checked={f.yearly} onChange={v => setF(s => ({ ...s, yearly: v }))} />
+            {/* 반복 (v2.1 사용자 요청 — 매주 + 몇 주 동안/언제까지) */}
+            <KSelect minWidth={110} value={f.repeat} onChange={v => setF(s => ({ ...s, repeat: v as SchedEvent['repeat'] }))}
+              options={[
+                { value: 'none', label: '반복 없음' },
+                { value: 'weekly', label: '매주 반복' },
+                { value: 'yearly', label: '매년 반복' },
+              ]} />
+            {f.repeat === 'weekly' && (
+              <>
+                <KStep value={f.repeatCount} min={0} max={520} suffix="주 동안" onChange={v => setF(s => ({ ...s, repeatCount: v }))} />
+                <span style={{ fontSize: 11, color: 'var(--faint)' }}>또는</span>
+                <KDate value={f.repeatUntil} onChange={v => setF(s => ({ ...s, repeatUntil: v }))} placeholder="언제까지 (선택)" style={{ width: 140 }} />
+                <small className="hint" style={{ margin: 0, width: '100%' }}>0주·날짜 없음 = 계속 반복 · 같은 요일에 돌아옵니다</small>
+              </>
+            )}
             {isAdmin && f.title.trim() && f.start && (
               <button className="btn btn-ghost" style={{ padding: '5px 11px', fontSize: 10.5, marginLeft: 'auto' }}
                 onClick={promoteDday}>D-day 등록</button>

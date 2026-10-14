@@ -35,7 +35,7 @@ import { useCustomLinks, linkEntries, toInternalPath } from '@/lib/linkStore';
 import { useSiteDraft } from '@/lib/siteStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCursorSettings, CursorState, CURSOR_STATE_LABEL } from '@/lib/cursorStore';
-import { RelQuestionSet, RELQ_SEED, RELQ_KEY, CP_LABEL } from '@/lib/relqStore';
+import { RelQuestionSet, CP_LABEL, useRelqSets } from '@/lib/relqStore';
 import { SymbolInput } from '@/components/ui/SymbolInput';
 import { allBlobs, putBlobAs, useBlobUrl, getBlob } from '@/lib/blobStore';
 import { parseAni } from '@/lib/aniCursor';
@@ -905,7 +905,7 @@ function BoardPane() {
 
 /** 자관 질문 탭 (v1.9) — 질문 세트(CP/NCP) 관리. 자관 상세의 QUESTIONS 섹션 추가 시 세트를 골라 넣는다 */
 function RelQPane() {
-  const [sets, setSets] = useLocalList<RelQuestionSet>(RELQ_KEY, RELQ_SEED);
+  const [sets, setSets] = useRelqSets();   // 사이트 설정으로 저장 — 서버에도 올라간다 (v2.1 사용자 제보: 로컬에만 남았다)
   const [selId, setSelId] = useState<string | null>(null);
   const del = useConfirmDelete();
   const relqToast = useToast();

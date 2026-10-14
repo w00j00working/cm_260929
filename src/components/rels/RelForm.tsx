@@ -185,7 +185,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
     const refs = auObj ? (auObj.arts ?? []) : (initial?.arts ?? (initial?.thumbId ? [initial.thumbId] : []));
     return refs.map(r => ({ id: newId(), ref: r }));
   });
-  const [thumbCrop, setThumbCrop] = useState<CropValue | undefined>(initial?.thumbCrop);
+  const [thumbCrop, setThumbCrop] = useState<CropValue | undefined>(auObj ? auObj.thumbCrop : initial?.thumbCrop);   // AU 편집이면 그 AU 네모(1:1) 위치 (v2.1)
   const [cropOpen, setCropOpen] = useState(false);
   const [lb, setLb] = useState<number | null>(null);   // 아트 썸네일 클릭 → 원본 보기
   const [headerFile, setHeaderFile] = useState<File | null>(null);
@@ -417,7 +417,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
         {/* 아트 다중 등록 — 첫 장 = 대표 · 리스트 썸네일(4:3 크롭) */}
         <label className="k-label" style={{ margin: 0 }}>
           {auObj ? `아트 — ${auObj.label} AU 일러` : '아트'} <span style={{ fontWeight: 400, color: 'var(--faint)' }}>
-            {auObj ? '— 이 AU를 선택했을 때의 중앙 일러' : '— 첫 장이 대표 · 리스트 썸네일은 첫 장에서 4:3 크롭 · 상세 일러스트 모드에서 넘겨보기'}</span>
+            {auObj ? '— 이 AU를 선택했을 때의 중앙 일러 · 첫 장은 자관 페이지 AU 네모의 썸네일(1:1 크롭)' : '— 첫 장이 대표 · 리스트 썸네일은 첫 장에서 4:3 크롭 · 상세 일러스트 모드에서 넘겨보기'}</span>
         </label>
         {arts.length > 0 && (
           <DragList items={arts} keyOf={a => a.id} onReorder={setArts}
@@ -838,7 +838,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
       </div>
 
       {arts[0] && cropOpen && (
-        <FirstArtCrop open={cropOpen} item={arts[0]} crop={thumbCrop}
+        <FirstArtCrop open={cropOpen} item={arts[0]} crop={thumbCrop} aspect={auObj ? '1:1' : '4:3'}
           onClose={() => setCropOpen(false)}
           onApply={c => { setThumbCrop(c); setCropOpen(false); }} />
       )}
@@ -873,8 +873,9 @@ function HeaderCrop({ src, refId, crop, onClose, onApply }: {
 }
 
 /** 첫 아트(새 파일 또는 저장된 blob)를 소스로 4:3 크롭 편집기 */
-function FirstArtCrop({ open, item, crop, onClose, onApply }: {
+function FirstArtCrop({ open, item, crop, aspect, onClose, onApply }: {
   open: boolean; item: ArtItem; crop?: CropValue;
+  aspect?: '4:3' | '1:1';   // 원본: 리스트 썸네일 4:3 · AU: AU 네모 1:1 (v2.1)
   onClose: () => void; onApply: (c: CropValue) => void;
 }) {
   const [loadedUrl, setLoadedUrl] = useState('');
@@ -884,5 +885,5 @@ function FirstArtCrop({ open, item, crop, onClose, onApply }: {
   }, [item, open]);
   const src = item.url || loadedUrl;
   if (!src) return null;
-  return <CropEditor open={open} src={src} aspect="4:3" initial={crop} onClose={onClose} onApply={onApply} />;
+  return <CropEditor open={open} src={src} aspect={aspect ?? '4:3'} aspectLabel={aspect === '1:1' ? 'AU 네모 (1:1)' : undefined} initial={crop} onClose={onClose} onApply={onApply} />;
 }

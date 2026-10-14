@@ -194,7 +194,8 @@ function RoadviewPageInner() {
   const cats = roadCatsOf(boardSet, sec.id);
   const [cat, setCat] = useState('');                 // 보는 탭 — '' = ALL
   const [upCat, setUpCat] = useState('');             // 올릴 때 붙일 말머리
-  const effUpCat = cats.some(c => c.label === upCat) ? upCat : (cats.some(c => c.label === cat) ? cat : cats[0]?.label ?? '');
+  const [upOpen, setUpOpen] = useState(false);         // 업로드 모달 (v2.1 사용자 요청 — 머리줄의 말머리 드롭다운이 탭과 겹쳐 보여, 올릴 때 모달에서 고른다)
+  const effUpCat = cats.some(c => c.label === upCat) ? upCat : '';   // 업로드 모달에서 고른 말머리 (없음이면 말머리 없이)
   useEffect(() => { setShown(PAGE_SIZE); }, [cat]);   // 탭을 바꾸면 처음부터
   const badgeOf = (label?: string) => cats.find(c => c.label === label);
 
@@ -220,7 +221,7 @@ function RoadviewPageInner() {
   const [delFor, setDelFor] = useState<RoadItem | null>(null);
 
   // 즉시 업로드 (v1.7) — IndexedDB 실저장 (R2 연동 시 서버로 이전)
-  const upload = async (f: File | undefined) => {
+  const upload = async (f: File | undefined, catLabel = effUpCat) => {
     if (!f) return;
     const imgId = await putBlob(f); // IndexedDB 실저장 — 새로고침에도 유지
     const it: RoadItem = {
@@ -228,7 +229,7 @@ function RoadviewPageInner() {
       date: new Date().toISOString(), imgId, ph: '', ratio: 'auto',
       fold: null, comments: [],
       no: nextNo,   // 번호 자동 부여 (v1.9)
-      ...(effUpCat ? { category: effUpCat } : {}),   // 말머리 (v2.1) — 올릴 때 골라 둔 것
+      ...(catLabel ? { category: catLabel } : {}),   // 말머리 (v2.1) — 업로드 모달에서 고른 것 (끌어다 놓기는 보고 있는 탭)
     };
     setItems([it, ...items]);
     toast(`${padNo(it.no)} 업로드되었습니다`);
@@ -314,19 +315,32 @@ function RoadviewPageInner() {
           {canWriteAt(menuSet, writeKeyOf('/loadb', sec.id), { loggedIn: !!user, isAdmin, id: user?.id }, menuSet.roadUpload) && (
             <>
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => { upload(e.target.files?.[0]); e.target.value = ''; }} />
-              {/* 올릴 때 붙일 말머리 (v2.1) — 보고 있는 탭이 처음값, 말머리가 없으면 줄 자체가 없다 */}
-              {cats.length > 0 && (
-                <KSelect minWidth={110} value={effUpCat} onChange={setUpCat}
-                  options={cats.map(c => ({ value: c.label, label: `말머리: ${c.label}` }))} />
-              )}
-              <button className="btn btn-dark" onClick={() => fileRef.current?.click()}
-                {...fileDrop(fl => upload(fl[0]))}>↑ UPLOAD</button>
+                onChange={e => { upload(e.target.files?.[0]); e.target.value = ''; setUpOpen(false); }} />
+              {/* 말머리가 있으면 UPLOAD → 모달에서 말머리를 고르고 파일 선택 (v2.1 사용자 요청 — 머리줄의 드롭다운은 탭과 겹쳐 보여 뺐다).
+                  끌어다 놓기는 보고 있는 탭의 말머리로 바로 올린다 */}
+              <button className="btn btn-dark"
+                onClick={() => { if (cats.length) { setUpCat(cats.some(c => c.label === cat) ? cat : ''); setUpOpen(true); } else fileRef.current?.click(); }}
+                {...fileDrop(fl => upload(fl[0], cats.some(c => c.label === cat) ? cat : ''))}>↑ UPLOAD</button>
             </>
           )}
           <SearchBar onSearch={setQ} />
         </div>
       </div>
+
+      {/* 업로드 모달 (v2.1) — 말머리를 고르고 파일 선택 */}
+      <Modal open={upOpen} onClose={() => setUpOpen(false)} small title="업로드"
+        desc="붙일 말머리를 고르고 파일을 선택하세요"
+        actions={<>
+          <button className="btn btn-ghost" onClick={() => setUpOpen(false)}>CANCEL</button>
+          <button className="btn btn-dark" onClick={() => fileRef.current?.click()}>파일 선택 ↑</button>
+        </>}>
+        <div className="seg" style={{ flexWrap: 'wrap' }}>
+          <button className={upCat === '' ? 'on' : ''} onClick={() => setUpCat('')}>없음</button>
+          {cats.map(c => (
+            <button key={c.id} className={upCat === c.label ? 'on' : ''} onClick={() => setUpCat(c.label)}>{c.label}</button>
+          ))}
+        </div>
+      </Modal>
 
       {visible.slice(0, shown).map(it => (
         <RoadBlock key={it.id} item={it} catBadge={badgeOf(it.category)} comments={commentsFor(cmtRows, 'road', it.id, it.comments)} onComment={addComment}

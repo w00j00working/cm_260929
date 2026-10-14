@@ -331,6 +331,8 @@ export interface RelAu {
   bodyFontId?: string;
   /** AU별 전신 앞뒤 (v2.0) — AU 편집의 앞으로/뒤로가 원본 배치를 바꾸지 않게. 미지정: 자관 기본 */
   fullFront?: string;
+  /** 처음 보이는 이미지 — 전신(duo) / 일러스트(one) (v2.1 사용자 요청) — 비우면 자관 기본(Relation.illustMode) */
+  illustMode?: 'duo' | 'one';
   /** AU별 색·배경 — 없으면 자관 기본 (위 RelAuStyle 설명 참조) */
   style?: RelAuStyle;
   /** AU별 멤버 표시값 — 없으면 자관 기본 (위 RelAuMember 설명 참조) */

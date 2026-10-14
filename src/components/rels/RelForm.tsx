@@ -58,6 +58,7 @@ export interface RelFormValue {
   nameBolds?: Record<string, boolean>;                          // 멤버 카드 이름 볼드 (v2.0 — 기본 켜짐)
   quoteColors?: Record<string, { fg?: string; mark?: string }>; // 히어로 대사 글씨/따옴표색 (페어, v1.9)
   fullFront?: string;                          // 앞에 보일 캐릭터 id
+  illustMode?: 'duo' | 'one';                  // 처음 보이는 이미지 — 전신(duo) / 일러스트(one) (v2.1 사용자 요청)
   auName?: string;           // AU별 자관명 (v2.0 사용자 요청 — AU 편집일 때만)
   qaHide?: boolean;          // 문답 답변 숨기기 (v2.0 사용자 요청)
   pickedCharIds: string[];   // 등록 시 연동할 내 캐릭터 (수정 모드에선 빈 배열)
@@ -209,6 +210,8 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
   const [illuCustom, setIlluCustom] = useState(!!(st?.illuBg || st?.illuOn));
   const [illuBg, setIlluBg] = useState(st?.illuBg ?? '#1d2025');
   const [illuOn, setIlluOn] = useState(st?.illuOn ?? '#a63a45');
+  // 처음 보이는 이미지 (v2.1 사용자 요청) — 페어 자관 페이지를 열었을 때 전신 2장인지 대표 일러스트인지. AU 편집이면 그 AU 값
+  const [illustMode, setIllustMode] = useState<'duo' | 'one'>(auObj?.illustMode ?? initial?.illustMode ?? 'duo');
   // 자관명·캐치프레이즈 글씨색 (v1.9 사용자 요청) — 직접 지정 안 하면 테마색
   const [txtCustom, setTxtCustom] = useState(!!(st?.nameColor || st?.cpColor));
   const [nameColor, setNameColor] = useState(st?.nameColor ?? '#e8eaee');
@@ -320,6 +323,7 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
       headerCrop: headerRemoved ? undefined : headerCrop,
       headerRemoved,
       themeFollow,
+      illustMode,
       illuBg: illuCustom ? illuBg : undefined,
       illuOn: illuCustom ? illuOn : undefined,
       nameColor: txtCustom ? nameColor : undefined,
@@ -806,6 +810,15 @@ export function RelForm({ initial, auId, myChars, memberNames, existingIds, onSa
                 )}
               </div>
             )}
+            {/* 처음 보이는 이미지 (v2.1 사용자 요청) — 전신 / 일러스트. 전신이 하나도 없으면 일러스트만 보인다 */}
+            <div>
+              <span className="cp-lb" style={{ display: 'block', marginBottom: 6 }}>처음 보이는 이미지{auObj ? ' (이 AU)' : ''}</span>
+              <div className="mini-seg">
+                <button className={illustMode === 'duo' ? 'on' : ''} onClick={() => setIllustMode('duo')}>전신</button>
+                <button className={illustMode === 'one' ? 'on' : ''} onClick={() => setIllustMode('one')}>일러스트</button>
+              </div>
+              <small className="hint" style={{ display: 'block', marginTop: 4 }}>페이지를 열었을 때 먼저 보이는 쪽 — 스위치로 언제든 바꿔 볼 수 있습니다. 전신이 없으면 일러스트만 보입니다</small>
+            </div>
             {/* 전신/일러 스위치 색 (v1.9 사용자 요청) — 페어 중앙 이미지의 전환 스위치. AU마다 따로 (v2.0) */}
             {(
               <div>

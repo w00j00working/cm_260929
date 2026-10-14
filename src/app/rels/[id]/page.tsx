@@ -471,7 +471,8 @@ export default function RelDetailPage() {
   const fullRefOf = (cid: string) =>
     (isBaseAu ? rel?.members.find(x => x.charId === cid)?.fullImgId : au?.fulls?.[cid]);
   const hasFull = !!rel?.members.some(m => fullRefOf(m.charId));
-  const single = hasFull ? (oneMode ?? rel?.illustMode === 'one') : true;
+  // 처음 보이는 쪽 — AU에 정한 값이 있으면 그것, 없으면 자관 기본 (v2.1 사용자 요청 — 수정 화면에서 정한다)
+  const single = hasFull ? (oneMode ?? ((isBaseAu ? rel?.illustMode : (au?.illustMode ?? rel?.illustMode)) === 'one')) : true;
 
   // 멤버 캐릭터 — AU 선택 시 그 캐릭터의 AU 프로필(이름·사진 등)로 합성해 표시 (v1.9)
   const auCharKey = rel && !isBaseAu && au ? `${rel.id}:${au.id}` : null;
@@ -848,7 +849,7 @@ export default function RelDetailPage() {
             return (
               <div key={a.id} className={`au-item ${auId === a.id ? 'on' : ''}`}
                 data-tip={isAdmin && thumb ? '우클릭: 썸네일 위치 조정' : undefined}
-                onClick={() => { setAuId(a.id); setArtIdx(0); setQaNo(null); }}
+                onClick={() => { setAuId(a.id); setArtIdx(0); setQaNo(null); setOneMode(null); }}   /* AU를 바꾸면 그 AU의 처음 보이는 쪽으로 */
                 onContextMenu={e => {
                   // 네모(1:1) 안에서 보일 위치를 따로 잡는다 (v2.1 사용자 제보 — 4:3 리스트 크롭·가운데 기본값으로는 윗부분이 잘렸다)
                   if (!isAdmin || !thumb) return;

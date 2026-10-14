@@ -60,7 +60,7 @@ function RelEditInner() {
                 pageBgG1: v.pageBgG1, pageBgG2: v.pageBgG2, pageBgAngle: v.pageBgAngle }),
             // CP/문답 숨김은 자관 전체 설정(AU 폼에는 없음) · 전신 앞뒤는 AU면 그 AU에만 (v2.0)
             ...(auObj ? {} : { cp: v.cp, qaHide: v.qaHide, fullFront: v.fullFront ?? r.fullFront }),
-            illustMode: v.kind === 'pair' ? r.illustMode : 'one',
+            illustMode: v.kind === 'pair' ? (auObj ? r.illustMode : (v.illustMode ?? r.illustMode)) : 'one',   // 처음 보이는 이미지 — AU 편집이면 아래 AU에 (v2.1)
             // 전신 크기·위치·한마디·대사 색 — **AU를 편집 중이면 자관 공통을 건드리지 않는다**
             // (v2.0 사용자 발견: AU에서 고치면 다른 AU 페이지까지 같이 바뀌던 것.
             //  예전엔 이 줄이 auObj와 상관없이 늘 돌아서 자관 공통 members를 덮어썼다.
@@ -87,6 +87,7 @@ function RelEditInner() {
                   name: v.auName?.trim() ? v.auName.trim() : undefined,
                   // AU별 폰트·전신 앞뒤 (v2.0 사용자 제보) — 원본이 아니라 이 AU에 담는다
                   fontId: v.fontId, bodyFontId: v.bodyFontId, fullFront: v.fullFront,
+                  illustMode: v.illustMode,   // 이 AU를 열었을 때 전신/일러스트 중 무엇부터 (v2.1)
                   // AU별 색·배경 (v2.0 사용자 요청) — 「직접 지정」을 끄면 undefined가 되어
                   // 자관 값으로 되돌아간다(auStyle이 묶음 단위로 판정한다)
                   style: {

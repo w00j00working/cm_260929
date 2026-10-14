@@ -36,7 +36,6 @@ export function PlaylogForm({ initial, records, onSave, onCancel }: {
   const [scenarioLink, setScenarioLink] = useState(initial?.scenarioLink ?? '');
   const [writer, setWriter] = useState(initial?.writer ?? '');
   const [withText, setWithText] = useState(initial?.withText ?? '');
-  const [role, setRole] = useState(initial?.role ?? '');
   const [playtime, setPlaytime] = useState(initial?.playtime ?? '');
   const [linkMode, setLinkMode] = useState<'url' | 'log'>(initial?.logId ? 'log' : 'url');
   const [url, setUrl] = useState(initial?.url ?? '');
@@ -56,7 +55,7 @@ export function PlaylogForm({ initial, records, onSave, onCancel }: {
       date: date || undefined,
       scenario: scenario.trim(),
       scenarioLink: scenarioLink.trim() || undefined,
-      writer: writer.trim(), withText: withText.trim(), role: role.trim(), playtime: playtime.trim(),
+      writer: writer.trim(), withText: withText.trim(), role: initial?.role ?? '', playtime: playtime.trim(),   // Role 입력은 v2.1에서 삭제 — 옛 값만 유지
       url: linkMode === 'url' ? (url.trim() || undefined) : undefined,
       logId: linkMode === 'log' ? (logId || undefined) : undefined,
     });
@@ -97,10 +96,8 @@ export function PlaylogForm({ initial, records, onSave, onCancel }: {
           )}
         </div>
         <Field label="Scenario Link (optional)"><KInput value={scenarioLink} onChange={e => setScenarioLink(e.target.value)} /></Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 10 }}>
-          <Field label="Writer"><KInput value={writer} onChange={e => setWriter(e.target.value)} /></Field>
-          <Field label="Role"><KInput value={role} onChange={e => setRole(e.target.value)} /></Field>
-        </div>
+        {/* Role 칸은 v2.1에서 뺐다 (사용자 요청 — 커플홈이라 GM/PC 구분이 필요 없다) */}
+        <Field label="Writer"><KInput value={writer} onChange={e => setWriter(e.target.value)} /></Field>
         <Field label="With"><KInput value={withText} onChange={e => setWithText(e.target.value)} /></Field>
 
         {/* 로그 연결 — 외부 URL 또는 내 홈 백업 로그 검색 (4.16) */}

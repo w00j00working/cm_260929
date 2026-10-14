@@ -102,7 +102,6 @@ function PlaylogPageInner() {
             {show('scenario') && <col className="c-sc" />}
             {show('writer') && <col className="c-wr" />}
             {show('with') && <col className="c-with" />}
-            {show('role') && <col className="c-role" />}
             {show('playtime') && <col className="c-pt" />}
             {show('url') && <col className="c-url" />}
             {canAdd && !isMobile && <col className="c-mng" />}
@@ -117,7 +116,6 @@ function PlaylogPageInner() {
               {show('scenario') && <th>Scenario</th>}
               {show('writer') && <th>Writer</th>}
               {show('with') && <th>With</th>}
-              {show('role') && <th>Role</th>}
               {show('playtime') && <th>Playtime</th>}
               {show('url') && <th aria-label="Url" />}
               {canAdd && !isMobile && <th aria-label="관리" />}
@@ -136,7 +134,6 @@ function PlaylogPageInner() {
                 )}
                 {show('writer') && <td>{r.writer}</td>}
                 {show('with') && <td>{r.withText}</td>}
-                {show('role') && <td className="td-role">{r.role}</td>}
                 {show('playtime') && (
                   <td className={`td-pt ${r.logId ? 'linked' : ''}`}
                     onClick={() => openLogMobile(r)}>

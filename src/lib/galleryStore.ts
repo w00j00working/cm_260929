@@ -38,6 +38,8 @@ export interface BackupPost {
   type: 'log' | 'single' | 'vlist';    // 로그형(틈 없이 세로) / 단일형(좌우 넘김) / 단일 세로정렬(갭 있는 세로, v1.9)
   images: string[];          // 파일 id 또는 URL (비어 있으면 데모 ph — blobStore 참조)
   thumbCrop?: CropValue;     // 대표(첫) 이미지의 썸네일 크롭 (6.1)
+  /** 썸네일 전용 이미지 (v2.1 사용자 요청) — 있으면 목록 썸네일은 이 이미지(+thumbCrop)이고 본문에는 나오지 않는다. 없으면 첫 이미지 */
+  thumbId?: string;
   phList: string[];          // 데모 플레이스홀더
   desc: string;
   category: string;          // 말머리
@@ -182,15 +184,24 @@ export async function saveLogBody(text: string): Promise<{ body: string; bodyId?
 }
 
 /* ---------- TRPG 도토리 (4.15) — 시나리오 위시리스트 ---------- */
-export type DotoriStatus = 'pledge' | 'undecided' | 'confirmed' | 'done';
+/** 상태 키 — 기본 넷(pledge·undecided·confirmed·done)에 환경설정 TRPG 탭에서 추가한 것(st-…)까지 (v2.1 사용자 요청) */
+export type DotoriStatus = string;
 export const DOTORI_STATUS_LABEL: Record<DotoriStatus, string> = {
   pledge: '공수표', undecided: '일정 미정', confirmed: '일정 확정', done: '완',
 };
 
 /* ---------- TRPG 설정 (환경설정 > TRPG 탭, v1.9) — 상태 카테고리 라벨 + 뱃지 색 ---------- */
-export interface DotoriStatusStyle { label: string; bg: string; border: string; fg: string }
+export interface DotoriStatusStyle {
+  label: string; bg: string; border: string; fg: string;
+  /** 카드 우상단 뱃지로 보일지 (v2.1) — 비우면 기본 규칙(공수표·일정 확정만) */
+  badge?: boolean;
+  /** 「전체」 탭에서 숨길지 (v2.1) — 비우면 기본 규칙(완만 숨김) */
+  hideInAll?: boolean;
+}
 export interface TrpgSettings {
   statuses: Record<DotoriStatus, DotoriStatusStyle>;
+  /** 상태 순서 (v2.1) — 추가·삭제한 상태까지. 비우면 기본 넷의 순서 */
+  statusOrder?: string[];
 }
 export const DEFAULT_TRPG_SETTINGS: TrpgSettings = {
   statuses: {
@@ -204,6 +215,22 @@ export const DEFAULT_TRPG_SETTINGS: TrpgSettings = {
 
 // 일정미정이 공수표보다 먼저 오게 (v2.0 사용자 요청)
 export const DOTORI_STATUS_KEYS: DotoriStatus[] = ['undecided', 'pledge', 'confirmed', 'done'];
+
+/** 지금 쓰는 상태 키 순서 (v2.1) — 정한 순서 + 거기 빠진 상태(옛 저장분) */
+export function dotoriStatusKeys(st: TrpgSettings): DotoriStatus[] {
+  const base = (st.statusOrder ?? DOTORI_STATUS_KEYS).filter(k => st.statuses[k]);
+  const rest = Object.keys(st.statuses).filter(k => !base.includes(k));
+  return [...base, ...rest];
+}
+/** 그 상태의 표시 스타일 — 지워진 상태 키를 가진 옛 항목은 회색 기본값 */
+export const dotoriStatusOf = (st: TrpgSettings, k: string): DotoriStatusStyle =>
+  st.statuses[k] ?? { label: k, bg: '#7a8089', border: '#7a8089', fg: '#ffffff' };
+/** 카드 뱃지로 보일 상태인가 — 지정이 없으면 공수표·일정 확정만 (예전 규칙) */
+export const dotoriBadgeOn = (st: TrpgSettings, k: string): boolean =>
+  st.statuses[k]?.badge ?? (k === 'pledge' || k === 'confirmed');
+/** 「전체」 탭에서 숨길 상태인가 — 지정이 없으면 완만 */
+export const dotoriHiddenInAll = (st: TrpgSettings, k: string): boolean =>
+  st.statuses[k]?.hideInAll ?? k === 'done';
 
 /** 도토리 상태 뱃지 스타일 (카드 우상단 — 공수표/일정 확정만 표시) */
 export function dotoriBadgeStyle(st: DotoriStatusStyle): CSSProperties {
@@ -220,7 +247,7 @@ export function useTrpgSettings(): [TrpgSettings, (patch: Partial<TrpgSettings>)
       const raw = getRawSetting(TRPG_SET_KEY);
       if (raw) {
         const p = JSON.parse(raw) as Partial<TrpgSettings>;
-        setSt({ statuses: { ...DEFAULT_TRPG_SETTINGS.statuses, ...(p.statuses ?? {}) } });
+        setSt({ statuses: { ...DEFAULT_TRPG_SETTINGS.statuses, ...(p.statuses ?? {}) }, ...(p.statusOrder ? { statusOrder: p.statusOrder } : {}) });
       }
     } catch { /* 기본값 */ }
     setLoaded(true);

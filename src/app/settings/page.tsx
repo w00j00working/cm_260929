@@ -18,10 +18,10 @@ import { newId } from '@/lib/postStore';
 import { useCommSettings, badgeStyle, CommBadge, CommSettings } from '@/lib/commStore';
 import {
   useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf, feedCatsOf, roadCatsOf, feedHideAuthorOf,
-  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref,
+  useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID, boardHref, perPageOf, PER_PAGE_DEFAULT,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
-import { useTrpgSettings, DOTORI_STATUS_KEYS, DotoriStatus, dotoriBadgeStyle } from '@/lib/galleryStore';
+import { useTrpgSettings, dotoriStatusKeys, dotoriBadgeOn, dotoriHiddenInAll, DotoriStatus, dotoriBadgeStyle } from '@/lib/galleryStore';
 import { useMemoSettings } from '@/lib/memoStore';
 import {
   useMenuSettings, MenuSettings, MenuPerm, MenuVis, PLAYLOG_COLS,
@@ -656,6 +656,7 @@ function BoardPane() {
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
     patchFeedCat, addFeedCat, removeFeedCat, setFeedCats, setFeedHideAuthor,
     patchRoadCat, addRoadCat, removeRoadCat, setRoadCats,
+  setPerPage,
   } = useBoardSettings();
   const { boards, setBoards, patchBoard } = useBoards();
   const [catBoard, setCatBoard] = useState(MAIN_BOARD_ID);   // 말머리 편집 대상 게시판
@@ -892,6 +893,19 @@ function BoardPane() {
             onClick={() => blk.add(blk.sec)}>＋ 말머리 추가</button>
           {blk.extra}
         </React.Fragment>
+      ))}
+
+      {/* 한 페이지 글 수 (v2.1 사용자 요청 — 「환경설정에서 페이지에 몇 개 보일지」) */}
+      <h3 style={{ marginTop: 20 }}>한 페이지에 보일 글 수</h3>
+      <div className="d">이 수를 넘으면 1·2·3… 페이지로 나뉩니다 (1~60)</div>
+      {([
+        { k: 'gallery' as const, label: '갤러리 (갤러리 보기)' }, { k: 'galleryList' as const, label: '갤러리 (리스트 보기)' },
+        { k: 'feed' as const, label: '큰 그림' }, { k: 'road' as const, label: '로드비' },
+      ]).map(row => (
+        <div key={row.k} className="set-row" style={{ alignItems: 'center' }}>
+          <div className="l"><b>{row.label}</b><small>기본 {PER_PAGE_DEFAULT[row.k]}개</small></div>
+          <KStep value={perPageOf(st, row.k)} min={1} max={60} suffix="개" onChange={v => setPerPage(row.k, v)} />
+        </div>
       ))}
 
       <hr style={{ margin: '24px 0', border: 'none', borderTop: '1.5px solid var(--line)' }} />
@@ -2872,6 +2886,20 @@ function TrpgPane() {
   useEffect(() => { setLockDesc(getPageText('trpg-lock-desc', '비밀번호를 입력하면 열람할 수 있습니다')); }, []);
   const patchStatus = (k: DotoriStatus, p: Partial<(typeof settings.statuses)[DotoriStatus]>) =>
     patch({ statuses: { ...settings.statuses, [k]: { ...settings.statuses[k], ...p } } });
+  const statusKeys = dotoriStatusKeys(settings);
+  const del = useConfirmDelete();
+  // 상태 추가·삭제 (v2.1 사용자 요청) — 순서는 statusOrder에 적는다
+  const addStatus = () => {
+    const k = `st-${newId()}`;
+    patch({
+      statuses: { ...settings.statuses, [k]: { label: '새 상태', bg: '#7a8089', border: '#7a8089', fg: '#ffffff', badge: false, hideInAll: false } },
+      statusOrder: [...statusKeys, k],
+    });
+  };
+  const removeStatus = (k: string) => {
+    const rest = Object.fromEntries(Object.entries(settings.statuses).filter(([x]) => x !== k));
+    patch({ statuses: rest, statusOrder: statusKeys.filter(x => x !== k) });
+  };
   // 균등 칸 그리드 — 항목 폭이 라벨 길이에 안 흔들려 PC/모바일 두 줄이 세로로 정렬됨 (v1.9)
   const colToggle = (list: string[], k: keyof MenuSettings) => (
     <div style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${PLAYLOG_COLS.length}, 1fr)`, gap: 6, justifyItems: 'center' }}>
@@ -2894,15 +2922,15 @@ function TrpgPane() {
       </div>
 
       <h3>도토리 상태 카테고리</h3>
-      <div className="d">라벨과 뱃지 색(배경/테두리/글씨) — 카드 뱃지는 공수표·일정 확정만 표시</div>
-      {DOTORI_STATUS_KEYS.map(k => {
+      <div className="d">라벨과 뱃지 색(배경/테두리/글씨) · 「카드 뱃지」 = 카드 우상단에 표시 · 「전체에서 숨김」 = 전체 탭에서 빼기 — 상태를 더하거나 지울 수 있습니다 (v2.1)</div>
+      {statusKeys.map(k => {
         const st = settings.statuses[k];
         return (
-          <div key={k} className="set-row" style={{ alignItems: 'center' }}>
+          <div key={k} className="set-row" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <div className="l">
               <span className="dt-badge" style={{ ...dotoriBadgeStyle(st), position: 'static' }}>{st.label || '상태'}</span>
             </div>
-            <div className="cp-group" style={{ justifyContent: 'flex-end' }}>
+            <div className="cp-group" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <KInput value={st.label} onChange={e => patchStatus(k, { label: e.target.value })}
                 style={{ width: 100, textAlign: 'right' }} />
               <span className="cp-lb">배경</span>
@@ -2911,10 +2939,19 @@ function TrpgPane() {
               <ColorField value={st.border} onChange={hex => patchStatus(k, { border: hex })} />
               <span className="cp-lb">글씨</span>
               <ColorField value={st.fg} onChange={hex => patchStatus(k, { fg: hex })} />
+              <KCheck label="카드 뱃지" checked={dotoriBadgeOn(settings, k)} onChange={v => patchStatus(k, { badge: v })} />
+              <KCheck label="전체에서 숨김" checked={dotoriHiddenInAll(settings, k)} onChange={v => patchStatus(k, { hideInAll: v })} />
+              {statusKeys.length > 1 && (
+                <span className="fx" data-tip="상태 삭제"
+                  onClick={() => del.ask(`상태 「${st.label}」를 삭제하시겠습니까?`, () => removeStatus(k),
+                    '이 상태였던 도토리는 그대로 남고, 카드의 STATUS에서 다른 상태로 바꿀 수 있습니다.')}>✕</span>
+              )}
             </div>
           </div>
         );
       })}
+      <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }} onClick={addStatus}>＋ 상태 추가</button>
+      {del.element}
 
       {/* 플레이기록 표시 열 — PC/모바일 각각 (4.16 v1.8 · v1.9에서 TRPG 탭 하단 배치) */}
       <hr style={{ margin: '24px 0', border: 'none', borderTop: '1.5px solid var(--line)' }} />

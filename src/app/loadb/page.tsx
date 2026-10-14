@@ -8,8 +8,8 @@ import {
   CommentRow, COMMENT_KEY, COMMENT_SEED, commentsFor,
 } from '@/lib/postStore';
 import { RoadItem, ROAD_SEED } from '@/lib/galleryStore';
-import { useBoardSettings, roadCatsOf, boardBadgeStyle, BoardBadge } from '@/lib/boardStore';
-import { SearchBar, KInput, KSelect } from '@/components/ui/Kit';
+import { useBoardSettings, roadCatsOf, boardBadgeStyle, BoardBadge, perPageOf } from '@/lib/boardStore';
+import { SearchBar, KInput, KSelect, Pager } from '@/components/ui/Kit';
 import { putBlob, useBlobUrl } from '@/lib/blobStore';
 import { Modal, ConfirmModal, useConfirmDelete } from '@/components/ui/Modal';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
@@ -20,7 +20,6 @@ import { useMenuSettings, MenuPerm, canWriteAt, writeKeyOf } from '@/lib/menuSto
 import { GuestIdBar } from '@/components/ui/GuestId';
 import { fileDrop } from '@/lib/dnd';
 
-const PAGE_SIZE = 4;
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
 function RoadBlock({ item, catBadge, comments, onComment, onEditComment, onDeleteComment, canComment, guestMode, editLevel, delLevel, canEditItem, canDeleteItem, onEdit, onDelete }: {
@@ -187,7 +186,7 @@ function RoadviewPageInner() {
   // 일반 회원이 남의 그림에 댓글을 달 수 없었다 (게시판과 같은 원인)
   const [cmtRows, setCmtRows] = useLocalList<CommentRow>(COMMENT_KEY, COMMENT_SEED);
   const [q, setQ] = useState('');
-  const [shown, setShown] = useState(PAGE_SIZE);
+  const [page, setPage] = useState(1);   // 번호 페이지 (v2.1 사용자 요청 — 「더보기」 대신 1·2·3페이지)
   /* 말머리 (v2.1 사용자 요청 — 말머리별로 모아보기). 환경설정 > 게시판 관리의 로드비 말머리.
      하나도 없으면 탭·선택 줄 없이 지금까지처럼 */
   const { st: boardSet } = useBoardSettings();
@@ -196,7 +195,8 @@ function RoadviewPageInner() {
   const [upCat, setUpCat] = useState('');             // 올릴 때 붙일 말머리
   const [upOpen, setUpOpen] = useState(false);         // 업로드 모달 (v2.1 사용자 요청 — 머리줄의 말머리 드롭다운이 탭과 겹쳐 보여, 올릴 때 모달에서 고른다)
   const effUpCat = cats.some(c => c.label === upCat) ? upCat : '';   // 업로드 모달에서 고른 말머리 (없음이면 말머리 없이)
-  useEffect(() => { setShown(PAGE_SIZE); }, [cat]);   // 탭을 바꾸면 처음부터
+  const PER = perPageOf(boardSet, 'road');   // 한 페이지 그림 수 — 환경설정 > 게시판 관리 (기본 4, v2.1)
+  useEffect(() => { setPage(1); }, [cat, q]);   // 탭·검색을 바꾸면 첫 장부터
   const badgeOf = (label?: string) => cats.find(c => c.label === label);
 
   // 그림 번호 (v1.9) — 번호 없는 기존 그림은 오래된 순으로 자동 부여
@@ -342,7 +342,7 @@ function RoadviewPageInner() {
         </div>
       </Modal>
 
-      {visible.slice(0, shown).map(it => (
+      {visible.slice((Math.min(page, Math.max(1, Math.ceil(visible.length / PER))) - 1) * PER, Math.min(page, Math.max(1, Math.ceil(visible.length / PER))) * PER).map(it => (
         <RoadBlock key={it.id} item={it} catBadge={badgeOf(it.category)} comments={commentsFor(cmtRows, 'road', it.id, it.comments)} onComment={addComment}
           onEditComment={editComment} onDeleteComment={deleteComment}
           canComment={allow(menuSet.roadComment) && (!!user || menuSet.roadComment === 'guest')}
@@ -360,11 +360,8 @@ function RoadviewPageInner() {
           그림이 없습니다
         </div>
       )}
-      {shown < visible.length && (
-        <div style={{ textAlign: 'center', marginTop: 6 }}>
-          <button className="btn btn-ghost" style={{ background: 'rgba(255,255,255,.9)' }}
-            onClick={() => setShown(s => s + PAGE_SIZE)}>MORE ↓</button>
-        </div>
+      {visible.length > PER && (
+        <Pager page={Math.min(page, Math.ceil(visible.length / PER))} total={Math.ceil(visible.length / PER)} onChange={setPage} />
       )}
       {/* 편집 모달 (제목 · 수위 접기) */}
       <Modal open={editFor !== null} onClose={() => setEditFor(null)} small title="그림 편집"

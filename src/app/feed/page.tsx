@@ -8,13 +8,12 @@ import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, secQuery } from '@/lib/sectionStore';
 import { useLocalList, fmtDate } from '@/lib/postStore';
 import { BackupPost, FEED_KEY, FEED_SEED } from '@/lib/galleryStore';
-import { useBoardSettings, feedCatsOf, boardBadgeStyle, feedHideAuthorOf } from '@/lib/boardStore';
+import { useBoardSettings, feedCatsOf, boardBadgeStyle, feedHideAuthorOf, perPageOf } from '@/lib/boardStore';
 import { useMenuSettings, canWriteAt, writeKeyOf } from '@/lib/menuStore';
 import { useBlobUrl } from '@/lib/blobStore';
 import { SearchBar, Pager } from '@/components/ui/Kit';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
 
-const PER = 6;   // 참고한 블로그 피드처럼 한 장에 여섯 개
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
 /** 대표(첫) 이미지 — 원본보다 크게 늘리지 않는다: 폭이 모자랄 때만 줄이고, 작은 그림은 작은 그대로 가운데 */
@@ -48,6 +47,7 @@ function FeedPageInner() {
       || (p.tags ?? []).some(t => t.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => b.date.localeCompare(a.date));   // 최신 글이 위
 
+  const PER = perPageOf(boardSet, 'feed');   // 한 장에 몇 개 — 환경설정 > 게시판 관리 (기본 6, v2.1)
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(visible.length / PER));
   const cur = Math.min(page, pages);
@@ -88,7 +88,7 @@ function FeedPageInner() {
               <article key={p.id} className="panel feed-item"
                 onClick={() => { if (!folded) router.push(`/feed/${p.id}`); }}>
                 <div className={`art ${folded ? 'veil' : ''}`}>
-                  <FeedImg fileRef={p.images[0]} ph={p.phList[0]} />
+                  <FeedImg fileRef={p.thumbId ?? p.images[0]} ph={p.phList[0]} />   {/* 썸네일 전용 이미지가 있으면 그것을 (v2.1) */}
                   {folded && (
                     <div className="cover" onClick={e => { e.stopPropagation(); setUnveiled(u => ({ ...u, [p.id]: true })); }}>
                       <div>

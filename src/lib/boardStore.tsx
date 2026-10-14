@@ -49,7 +49,15 @@ export interface BoardSettings {
   /** 로드비 말머리 (v2.1 사용자 요청 — 말머리별로 모아보기). 정한 적 없으면 비어 있다 — 탭에 ALL만 보인다 */
   roadCats?: BoardBadge[];
   secRoadCats?: Record<string, BoardBadge[]>;
+  /** 한 페이지에 보일 글 수 (v2.1 사용자 요청) — 갤러리 보기 / 갤러리 리스트 보기 / 큰 그림 / 로드비. 비우면 기본값 */
+  perPage?: { gallery?: number; galleryList?: number; feed?: number; road?: number };
 }
+export const PER_PAGE_DEFAULT = { gallery: 12, galleryList: 20, feed: 6, road: 4 } as const;
+/** 한 페이지 글 수 — 정한 값(1~60), 없으면 기본값 */
+export const perPageOf = (s: BoardSettings, k: keyof typeof PER_PAGE_DEFAULT): number => {
+  const v = s.perPage?.[k];
+  return v && v >= 1 ? Math.min(60, Math.round(v)) : PER_PAGE_DEFAULT[k];
+};
 const DEFAULTS: BoardSettings = {
   system: DEFAULT_BOARD_SYSTEM, cats: DEFAULT_BOARD_CATS,
   gallery: DEFAULT_GALLERY_BADGES, galleryCats: DEFAULT_GALLERY_CATS,
@@ -154,7 +162,10 @@ export function useBoardSettings() {
   const removeRoadCat = useCallback((secId: string, id: string) =>
     mutRoadCats(secId, cs => cs.filter(b => b.id !== id)), [mutRoadCats]);
   const setRoadCats = useCallback((secId: string, cats: BoardBadge[]) => mutRoadCats(secId, () => cats), [mutRoadCats]);
+  const setPerPage = useCallback((k: keyof typeof PER_PAGE_DEFAULT, v: number | undefined) =>
+    apply(s => ({ ...s, perPage: { ...s.perPage, [k]: v } })), [apply]);
   return {
+    setPerPage,
     st, loaded, patchSystem, patchCat, addCat, removeCat, setCats, patchGallery,
     patchGalleryCat, addGalleryCat, removeGalleryCat, setGalleryCats,
     patchFeedCat, addFeedCat, removeFeedCat, setFeedCats, setFeedHideAuthor,

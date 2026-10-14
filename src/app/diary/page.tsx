@@ -7,6 +7,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { useFonts } from '@/lib/fontStore';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
 import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
 import { useLocalList } from '@/lib/postStore';
@@ -72,6 +73,7 @@ function DiaryBody({ p, onOpen }: { p: DiaryPost; onOpen: (ids: string[], idx: n
 function DiaryPageInner() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
+  const { familyOf } = useFonts();   // 캐릭터 칸 이름은 캐릭터의 이름 폰트로 (v2.1 사용자 요청 — 오너 칸은 기본 글꼴)
   const [postsAll, setPostsAll, loaded] = useLocalList<DiaryPost>('ohome.diary.v1', DIARY_SEED);
   // 여러 개로 만든 섹션 (v2.0) — 주소의 ?s= 가 가리키는 것만 보여 준다
   const sec = useSectionParam('diary');
@@ -283,7 +285,7 @@ function DiaryPageInner() {
               /* 오너 탭 — 각자 마이페이지에서 정한 프로필 사진 */
               <OwnerFace url={col.avatar} color={col.color} name={col.name} />
             )}
-            <b className="nm">{col.name}</b>
+            <b className="nm" style={ch?.fontId ? { fontFamily: familyOf(ch.fontId) } : undefined}>{col.name}</b>
             <small>{list.length}</small>
             {canWriteCol(col) && (
               <button className="btn btn-dark" onClick={() => router.push(writeHref(ch?.id))}>＋ WRITE</button>

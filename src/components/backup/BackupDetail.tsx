@@ -67,7 +67,7 @@ export function BackupDetail({ kind }: { kind: 'gallery' | 'feed' }) {
       // 원본보다 크게 늘리지 않는다 — 폭이 모자랄 때만 줄이고, 작은 그림은 작은 그대로 (v2.0 사용자 확정)
       return <img src={u} alt="" style={natural
         ? { maxWidth: '100%', maxHeight: '100%', display: 'block' }
-        : { maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' }} />;
+        : { maxWidth: feed ? '70%' : '100%', height: 'auto', display: 'block', margin: '0 auto' }} />;   // 큰 그림은 가로 70% (v2.1 사용자 요청)
     }
     return <div className={`ph ${im.ph ?? ''}`}
       style={natural ? { width: '100%', height: '100%' } : { aspectRatio: ratio ?? '16/10' }}><span>IMAGE</span></div>;

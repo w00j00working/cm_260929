@@ -68,6 +68,11 @@ export function BackupForm({ initial, kind = 'gallery' }: { initial: BackupPost 
       crop: i === 0 ? initial?.thumbCrop : undefined,
     })));
   const [desc, setDesc] = useState(initial?.desc ?? '');
+  // 썸네일 (v2.1 사용자 요청) — 본문 첫 이미지에서 잘라 쓰거나, 본문에 안 나오는 썸네일 전용 이미지를 따로 올린다 (택1)
+  const [thumbMode, setThumbMode] = useState<'body' | 'own'>(initial?.thumbId ? 'own' : 'body');
+  const [ownThumb, setOwnThumb] = useState<UpFile | null>(() => (initial?.thumbId
+    ? { id: 'own-thumb', name: '썸네일 전용 이미지', ref: initial.thumbId, original: true, crop: initial.thumbCrop }
+    : null));
   const del = useConfirmDelete();   // 이미지 제거도 되돌릴 수 없어 경고를 거친다
   // 갤러리 말머리 — 환경설정 > 게시판 관리에서 관리 (v2.0)
   const { st: boardSet } = useBoardSettings();
@@ -131,11 +136,15 @@ export function BackupForm({ initial, kind = 'gallery' }: { initial: BackupPost 
     if (!title.trim()) { toast('제목을 입력해 주세요'); return; }
     // 이미지 실저장 (IndexedDB) — 기존 ref는 유지, 새 파일만 저장
     const imageIds = await Promise.all(files.map(f => (f.file ? putBlob(f.file) : Promise.resolve(f.ref!))));
+    // 썸네일 전용 이미지 (v2.1) — 고른 경우에만 저장, 크롭도 그 이미지 기준
+    const ownId = thumbMode === 'own' && ownThumb ? (ownThumb.file ? await putBlob(ownThumb.file) : ownThumb.ref) : undefined;
+    const thumbCrop = ownId ? ownThumb?.crop : files[0]?.crop;
     if (isNew) {
       const p: BackupPost = {
         id: newId(), title: title.trim(), type,
         images: imageIds, phList: files.length ? [] : ['cool'],
-        thumbCrop: files[0]?.crop, // 대표 이미지 크롭 (6.1)
+        thumbCrop, // 대표 이미지(또는 썸네일 전용 이미지) 크롭 (6.1 · v2.1)
+        thumbId: ownId,
         desc, category, tags: parseTags(tagsText), madeDate: madeDate || undefined,
         date: new Date().toISOString(), author: user.nickname, authorId: user.id,
         visibility,
@@ -148,7 +157,8 @@ export function BackupForm({ initial, kind = 'gallery' }: { initial: BackupPost 
       setPosts(posts.map(x => x.id === initial.id ? {
         ...x, title: title.trim(), type,
         images: imageIds, phList: files.length ? [] : x.phList,
-        thumbCrop: files[0]?.crop,
+        thumbCrop,
+        thumbId: ownId,
         desc, category, tags: parseTags(tagsText), madeDate: madeDate || undefined, visibility,
         fold: foldType === 'none' ? null : { type: foldType, label: foldType === 'custom' ? foldLabel : undefined },
       } : x));
@@ -227,6 +237,37 @@ export function BackupForm({ initial, kind = 'gallery' }: { initial: BackupPost 
               </div>
             )}
           />
+          {/* 썸네일 (v2.1 사용자 요청) — 본문 이미지 조절 / 썸네일 전용 이미지 택1 */}
+          <div style={{ marginTop: 14 }}>
+            <label className="k-label">썸네일</label>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="mini-seg">
+                <button className={thumbMode === 'body' ? 'on' : ''} onClick={() => setThumbMode('body')}>본문 첫 이미지</button>
+                <button className={thumbMode === 'own' ? 'on' : ''} onClick={() => setThumbMode('own')}>썸네일 전용 이미지</button>
+              </div>
+              {thumbMode === 'body' && <small className="hint" style={{ margin: 0 }}>첫 이미지에서 잘라 씁니다 — 위 목록의 ✂ 썸네일로 영역 조절</small>}
+              {thumbMode === 'own' && (
+                <>
+                  <input id="bkThumb" type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={e => {
+                      const x = e.target.files?.[0]; e.target.value = '';
+                      if (x) setOwnThumb({ id: 'own-thumb', name: x.name, size: x.size, url: URL.createObjectURL(x), file: x, original: true });
+                    }} />
+                  <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }}
+                    onClick={() => document.getElementById('bkThumb')?.click()}>{ownThumb ? '이미지 바꾸기' : '＋ 썸네일 이미지'}</button>
+                  {ownThumb && (
+                    <>
+                      <div className="pv" style={{ width: 64, aspectRatio: '4/3', borderRadius: 7, overflow: 'hidden', position: 'relative' }}><FilePreview f={ownThumb} /></div>
+                      <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: 10, whiteSpace: 'nowrap' }}
+                        onClick={() => setCropFor(ownThumb)}>✂ 썸네일{ownThumb.crop ? ' ·지정됨' : ''}</button>
+                      <span className="fx" data-tip="썸네일 이미지 제거" onClick={() => setOwnThumb(null)}>✕</span>
+                    </>
+                  )}
+                  <small className="hint" style={{ margin: 0 }}>본문에는 나오지 않고 목록 썸네일로만 쓰입니다</small>
+                </>
+              )}
+            </div>
+          </div>
           <div style={{ marginTop: 14 }}>
             <label className="k-label">설명</label>
             <RichEditor value={desc} onChange={setDesc} placeholder='작품 설명을 작성하세요 (선택)' />
@@ -286,7 +327,8 @@ export function BackupForm({ initial, kind = 'gallery' }: { initial: BackupPost 
         <CropModal f={cropFor}
           onClose={() => setCropFor(null)}
           onApply={c => {
-            setFiles(l => l.map(x => x.id === cropFor.id ? { ...x, crop: c } : x));
+            if (cropFor.id === 'own-thumb') setOwnThumb(t => (t ? { ...t, crop: c } : t));   // 썸네일 전용 이미지 (v2.1)
+            else setFiles(l => l.map(x => x.id === cropFor.id ? { ...x, crop: c } : x));
             setCropFor(null);
             toast('썸네일 영역이 저장되었습니다 (원본 유지)');
           }} />

@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
 import { useLocalList } from '@/lib/postStore';
 import { PlayRecord, PLAYLOG_SEED } from '@/lib/galleryStore';
-import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf } from '@/lib/menuStore';
+import { useMenuSettings, canWriteAt, writeKeyOf, writeDefaultOf, PLAYLOG_COLS } from '@/lib/menuStore';
 import { useMainStore } from '@/lib/mainStore';
 import { useCardSort, mergeOrder } from '@/lib/cardSort';
 import { SearchBar, Pager } from '@/components/ui/Kit';
@@ -52,7 +52,9 @@ function PlaylogPageInner() {
     mq.addEventListener('change', f);
     return () => mq.removeEventListener('change', f);
   }, []);
-  const cols = isMobile ? menuSet.playlogMobile : menuSet.playlogPc;
+  // 지금 있는 열만 — 예전에 저장한 열 목록에는 v2.1에서 없앤 Role이 남아 있을 수 있다. 그대로 세면 빈 목록 안내 칸이 실제 열보다
+  // 넓게 합쳐져 표에 보이지 않는 열이 하나 더 생기고, 머리줄 밑선이 중간에서 끊겨 보였다 (v2.1 사용자 제보: 기록이 없을 때 모양)
+  const cols = (isMobile ? menuSet.playlogMobile : menuSet.playlogPc).filter(k => PLAYLOG_COLS.some(c => c.key === k));
   const show = (k: string) => cols.includes(k);
 
   // 편집모드 행 드래그 정렬 (v1.9) — 편집 중에는 정렬·페이지 없이 저장 순서 전체 표시

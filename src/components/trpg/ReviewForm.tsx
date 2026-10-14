@@ -219,7 +219,7 @@ export function ReviewForm({ initial }: { initial: TrpgReview | null }) {
                     <button type="button" className={x.role === 'GM' ? 'on' : ''} onClick={() => patchRater(x.id, { role: 'GM' })}>GM</button>
                     <button type="button" className={x.role === 'PC' ? 'on' : ''} onClick={() => patchRater(x.id, { role: 'PC' })}>PC</button>
                   </div>
-                  <KInput className="rv-rater-name" placeholder={`${x.role} 이름`} value={x.name}
+                  <KInput className="rv-rater-name" aria-label={`${x.role} 이름`} value={x.name}
                     onChange={e => patchRater(x.id, { name: e.target.value })} />
                   <Stars value={x.stars} onChange={n => patchRater(x.id, { stars: n })} />
                   {raters.length > 1 && (
@@ -227,7 +227,7 @@ export function ReviewForm({ initial }: { initial: TrpgReview | null }) {
                       onClick={() => setRaters(rs => rs.filter(y => y.id !== x.id))}>✕</button>
                   )}
                 </div>
-                <KTextarea placeholder={`${x.name.trim() || x.role} 한줄평`} value={x.text} maxRows={12}
+                <KTextarea aria-label="한줄평" value={x.text} maxRows={12}
                   onChange={e => patchRater(x.id, { text: e.target.value })} />
               </div>
             ))}

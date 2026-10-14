@@ -2434,13 +2434,16 @@ function MenuPane() {
       if (!sec) return null;
       secId = sec.id;
     }
-    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/pchars', '/tchars', '/dotori', '/playlog', '/trpg', '/treview'].includes(path)
+    const inWritePerm = ['/feed', '/diary', '/threads', '/chars', '/pchars', '/tchars', '/dotori', '/playlog', '/trpg', '/treview', '/cal'].includes(path)
       // 추가 로드비 — 기본 페이지의 공통값(roadUpload)을 따르되 따로 정할 수 있다 (기본 페이지는 아래 /loadb 가지에서)
       || (path === '/loadb' && secId !== MAIN_SEC);
     if (!inWritePerm) return null;
-    const def: MenuPerm = path === '/loadb' ? (ms.roadUpload === 'admin' ? 'admin' : 'member') : writeDefaultOf(path);
+    const def: MenuPerm = path === '/loadb' ? (ms.roadUpload === 'admin' ? 'admin' : 'member')
+      // 스케줄러 — 달력의 「회원도 일정 등록 허용」 토글이 기본값, 여기서 멤버를 좁히거나 따로 정할 수 있다 (v2.1 사용자 제보)
+      : path === '/cal' ? (getSetting<{ allowMember?: boolean }>('ohome.sched.v1', {}).allowMember ? 'member' : 'admin')
+      : writeDefaultOf(path);
     const key = writeKeyOf(path, secId);
-    const what = path === '/loadb' ? '업로드' : ['/tchars', '/chars', '/pchars', '/playlog', '/dotori', '/trpg'].includes(path) ? '등록' : '글쓰기';
+    const what = path === '/loadb' ? '업로드' : path === '/cal' ? '일정 등록' : ['/tchars', '/chars', '/pchars', '/playlog', '/dotori', '/trpg'].includes(path) ? '등록' : '글쓰기';
     return { key, perm: ms.writePerm?.[key] ?? def, what };
   };
 

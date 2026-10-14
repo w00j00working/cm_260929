@@ -1430,11 +1430,11 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
 .dy-tabhd .dy-cf+.dy-cf{margin-left:-10px}
 
 /* ---------- 큰 그림 게시판 (v2.1 사용자 요청) — 한 줄에 글 하나, 큰 이미지 + 말머리·제목·날짜 ---------- */
-.feed-list{display:grid;gap:18px;max-width:960px;margin:0 auto}
+.feed-list{display:grid;gap:18px;max-width:672px;margin:0 auto} /* 960의 70% — 패널째 줄인다 (v2.1 사용자 요청: 흰 배경도 이미지에 딱 맞게) */
 .feed-item{padding:0;overflow:hidden;cursor:var(--cur-pointer,pointer);transition:.15s}
 .feed-item:hover{transform:translateY(-2px)}
 .feed-item .art{position:relative;background:var(--panel-solid);min-height:120px;overflow:hidden}
-.feed-item .art img{display:block;max-width:70%;height:auto;margin:0 auto} /* 가로 70% (v2.1 사용자 요청 — 지나치게 커 보였다) */
+.feed-item .art img{display:block;max-width:100%;height:auto;margin:0 auto} /* 패널(70% 폭)을 꽉 채운다 (v2.1 사용자 요청) */
 .feed-item .art.veil img{filter:blur(18px)}
 .feed-item .art .cover{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;background:rgba(127,127,127,.15)}
 .feed-item .art .cover b{display:block;font-size:calc(13px*var(--fs,1))}
@@ -1654,6 +1654,20 @@ body.edit-on .main-grid.gridlines .wgt{outline-offset:0}
 .tagin-list button:hover,.tagin-list button.on{background:color-mix(in srgb,var(--accent) 9%,#fff);color:var(--accent)}
 
 /* ---------- TRPG 리뷰 (v2.1 사용자 요청) — 별점 + 한줄 평 목록 ---------- */
+/* 3:4 타일 그리드 (v2.1 사용자 요청 — 캐릭터 게시판처럼 타일이 쭉) */
+.rv-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:1080px){.rv-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:620px){.rv-grid{grid-template-columns:repeat(2,1fr);gap:10px}}
+.rv-card{cursor:var(--cur-pointer,pointer)}
+.rv-card .rv-img{aspect-ratio:3/4;position:relative;overflow:hidden}
+.rv-card .rv-img .ph{position:absolute;inset:0}
+.rv-card .rv-badge{position:absolute;left:8px;top:8px;z-index:2}
+.rv-card .bd .rv-stars{justify-content:flex-start;gap:6px 10px;margin-top:6px}
+.rv-detail-panel{display:grid;grid-template-columns:1fr;gap:18px;align-items:start}
+.rv-detail-panel:has(.rv-detail-img){grid-template-columns:280px 1fr}
+.rv-detail-img{position:relative;aspect-ratio:3/4;border-radius:var(--radius-s);overflow:hidden}
+.rv-detail-img .ph{position:absolute;inset:0}
+@media(max-width:720px){.rv-detail-panel:has(.rv-detail-img){grid-template-columns:1fr}.rv-detail-img{max-width:280px}}
 .rv-list{display:grid;gap:10px}
 .rv-row{padding:14px 18px;cursor:var(--cur-pointer,pointer);transition:.15s;display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center}
 .rv-row:hover{transform:translateY(-2px)}

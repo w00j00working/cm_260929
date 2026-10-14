@@ -67,7 +67,7 @@ export function BackupDetail({ kind }: { kind: 'gallery' | 'feed' }) {
       // 원본보다 크게 늘리지 않는다 — 폭이 모자랄 때만 줄이고, 작은 그림은 작은 그대로 (v2.0 사용자 확정)
       return <img src={u} alt="" style={natural
         ? { maxWidth: '100%', maxHeight: '100%', display: 'block' }
-        : { maxWidth: feed ? '70%' : '100%', height: 'auto', display: 'block', margin: '0 auto' }} />;   // 큰 그림은 가로 70% (v2.1 사용자 요청)
+        : { maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' }} />;
     }
     return <div className={`ph ${im.ph ?? ''}`}
       style={natural ? { width: '100%', height: '100%' } : { aspectRatio: ratio ?? '16/10' }}><span>IMAGE</span></div>;
@@ -89,7 +89,8 @@ export function BackupDetail({ kind }: { kind: 'gallery' | 'feed' }) {
       </div>
 
       {/* 본문만 폭 제한 — 헤더는 풀폭 위치 유지 */}
-      <div className="panel" style={{ padding: 20, maxWidth: 960, margin: '0 auto' }}>
+      {/* 큰 그림은 패널째 70%(672px)로 — 이미지는 패널을 꽉 채운다 (v2.1 사용자 요청) */}
+      <div className="panel" style={{ padding: 20, maxWidth: feed ? 672 : 960, margin: '0 auto' }}>
         {/* 제목·뱃지 세로 중앙 정렬 + 아래 여백 확보 */}
         <h2 style={{ fontSize: 18, marginBottom: p.desc ? 8 : 16, display: 'flex', alignItems: 'center', gap: 8 }}>
           {p.title}

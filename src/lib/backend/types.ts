@@ -192,12 +192,18 @@ export function metaOf(item: ListItem, uid: string | null, floor = 'public') {
  * (v2.0 사용자 발견 — 댓글 문제와 같은 뿌리).
  */
 export function editorIdsOf(item: ListItem): string[] {
+  // 문서에 바로 적어 둔 평평한 목록 (RP LOG·TRPG 리뷰 — 글쓰기 권한이 있는 회원은 수정도, trpgPerm.ts·reviewStore.ts).
+  // JN 이식 때 이 조각이 빠져 editorIds를 적어도 서버 editor_ids에는 안 올라갔다 (v2.1 수정)
+  const flat = Array.isArray(item.editorIds)
+    ? (item.editorIds as unknown[]).filter((s): s is string => typeof s === 'string')
+    : [];
   const grants = item.grants;
-  if (!Array.isArray(grants)) return [];
-  return grants
+  if (!Array.isArray(grants)) return flat;
+  const fromGrants = grants
     .filter((g): g is { userId: string; level: string } =>
       !!g && typeof g === 'object'
       && typeof (g as { userId?: unknown }).userId === 'string'
       && (g as { level?: unknown }).level === 'edit')
     .map(g => g.userId);
+  return [...new Set([...flat, ...fromGrants])];
 }

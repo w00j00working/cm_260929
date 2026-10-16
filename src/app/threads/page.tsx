@@ -286,8 +286,8 @@ function ThreadsPageInner() {
       </div>
 
       <div className="toolrow">
-        {/* 분류 필터 (환경설정 관리 리스트) */}
-        <div className="seg">
+        {/* 분류 필터 (환경설정 관리 리스트) · 많으면 탭째 다음 줄로 (cat-tabs, 루넬갠홈에서 이식) */}
+        <div className="seg cat-tabs">
           <button className={cat === 'all' ? 'on' : ''} onClick={() => setCat('all')}>전체</button>
           {cats.map(c => (
             <button key={c.id} className={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.label}</button>

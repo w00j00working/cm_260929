@@ -316,7 +316,8 @@ function DiaryPageInner() {
           탭 머리(두 사람 칸이 아닐 때): 연동한 자관/AU의 캐릭터(얼굴·이름), 연동하지 않았으면 오너 */}
       {dset.cats.length > 0 && (
         <>
-          <div className="seg" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
+          {/* 많으면 탭째 다음 줄로 — 글자는 접지 않는다 (cat-tabs, 루넬갠홈에서 이식) */}
+          <div className="seg cat-tabs" style={{ marginBottom: 12 }}>
             {dset.cats.map(c => (
               <button key={c.id} className={effCat === c.id ? 'on' : ''} onClick={() => setFCat(c.id)}>{c.name}</button>
             ))}
